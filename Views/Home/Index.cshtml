@@ -1,0 +1,260 @@
+﻿@model AnjaniKitchen.Models.DashboardViewModel
+@{
+    Layout = null;
+    ViewData["Title"] = Model.InitialPage == "categories" ? "Categories" : "Dashboard";
+    var rootMenus = Model.Menus.Where(menu => menu.ParentId is null).ToList();
+    var dashboardMenu = Model.Menus.FirstOrDefault(menu => menu.CanView && menu.ControllerName == "Home" && menu.ActionName == "Dashboard");
+    var ordersMenu = Model.Menus.FirstOrDefault(menu => menu.CanView && menu.ControllerName == "Order" && menu.ActionName == "Index");
+    var categoriesMenu = Model.Menus.FirstOrDefault(menu => menu.CanView && menu.ControllerName == "Catalog" && menu.ActionName == "categories");
+    var dishesMenu = Model.Menus.FirstOrDefault(menu => menu.CanView && menu.ControllerName == "Catalog" && menu.ActionName == "dishes");
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Anjani's Kitchen</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body class="admin-body">
+    <div class="app-shell" id="appShell">
+        <header class="topbar">
+            <a class="topbar-brand" href="/" aria-label="Anjani Kitchen dashboard">
+                <span class="brand-mark">AK</span>
+                <span class="brand-copy"><strong>Anjani's</strong><small>KITCHEN ADMIN</small></span>
+            </a>
+            <button class="icon-button sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle navigation" aria-expanded="true" title="Toggle navigation">
+                <span class="hamburger"><i></i><i></i><i></i></span>
+            </button>
+            <label class="global-search" for="globalSearch">
+                <span class="search-glyph" aria-hidden="true">⌕</span>
+                <input id="globalSearch" type="search" placeholder="Search menus, orders, customers" autocomplete="off" />
+                <kbd>⌘ K</kbd>
+            </label>
+            <div class="topbar-actions">
+                <div class="popover-wrap profile-wrap">
+                    <button class="profile-button" type="button" data-popover-toggle="profilePanel" aria-expanded="false" aria-label="Open account menu for @Model.AdminName">
+                        <span class="avatar">@(string.IsNullOrEmpty(Model.AdminName) ? "?" : Model.AdminName[..1].ToUpperInvariant())</span>
+                        <span class="profile-copy"><strong>@Model.AdminName</strong><small>@Model.RoleName</small></span>
+                        <span class="profile-chevron" aria-hidden="true"></span>
+                    </button>
+                    <div class="popover profile-popover" id="profilePanel" hidden>
+                        <div class="profile-menu-heading">
+                            <span class="avatar">@(string.IsNullOrEmpty(Model.AdminName) ? "?" : Model.AdminName[..1].ToUpperInvariant())</span>
+                            <span><strong>@Model.AdminName</strong><small>@Model.RoleName account</small></span>
+                        </div>
+                        <form method="post" action="/Home/Logout">
+                            @Html.AntiForgeryToken()
+                            <button class="signout-button" type="submit"><span class="signout-icon" aria-hidden="true">↪</span>Sign out</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="mobile-scrim" id="mobileScrim"></div>
+        <aside class="sidebar" id="sidebar">
+            <nav class="side-nav" aria-label="Main navigation">
+                <div class="nav-section-label">WORKSPACE</div>
+                @foreach (var menu in rootMenus)
+                {
+                    var childMenus = Model.Menus.Where(item => item.ParentId == menu.Id).ToList();
+                    var isDashboard = string.Equals(menu.ControllerName, "Home", StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(menu.ActionName, "Dashboard", StringComparison.OrdinalIgnoreCase);
+                    var activeChild = childMenus.Any(child =>
+                        (Model.InitialPage == "orders"
+                            && string.Equals(child.ControllerName, "Order", StringComparison.OrdinalIgnoreCase)
+                            && string.Equals(child.ActionName, "Index", StringComparison.OrdinalIgnoreCase))
+                        || (Model.InitialPage == "categories" && string.Equals(child.ActionName, "categories", StringComparison.OrdinalIgnoreCase))
+                        || (Model.InitialPage == "dishes" && string.Equals(child.ActionName, "dishes", StringComparison.OrdinalIgnoreCase)));
+                    var icon = menu.Name.Equals("Dashboard", StringComparison.OrdinalIgnoreCase) ? "◫"
+                        : menu.Name.Equals("Sales", StringComparison.OrdinalIgnoreCase) ? "▤"
+                        : menu.Name.Equals("Catalog", StringComparison.OrdinalIgnoreCase) ? "◈" : "•";
+                    if (!isDashboard && childMenus.Count > 0)
+                    {
+                        var submenuId = $"menu-submenu-{menu.Id}";
+                        <button class="nav-item nav-group @(activeChild ? "is-active" : "submenu-closed")" type="button" data-menu-group-toggle="@submenuId" aria-expanded="@activeChild.ToString().ToLowerInvariant()" aria-controls="@submenuId">
+                            <span class="nav-icon">@icon</span><span class="nav-text">@menu.Name</span><span class="nav-arrow" aria-hidden="true"></span>
+                        </button>
+                        <div class="nav-submenu @(activeChild ? "" : "is-collapsed")" id="@submenuId">
+                            @foreach (var child in childMenus)
+                            {
+                                var page = string.Equals(child.ControllerName, "Order", StringComparison.OrdinalIgnoreCase)
+                                    && string.Equals(child.ActionName, "Index", StringComparison.OrdinalIgnoreCase)
+                                    ? "orders"
+                                    : child.ActionName?.ToLowerInvariant();
+                                <a class="nav-subitem @(page == Model.InitialPage ? "is-active" : "")" href="@Url.Action(child.ActionName, child.ControllerName)"><span class="nav-subitem-dot"></span>@child.Name</a>
+                            }
+                        </div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(menu.ControllerName) && !string.IsNullOrWhiteSpace(menu.ActionName))
+                    {
+                        var page = isDashboard ? "dashboard"
+                            : menu.ControllerName.Equals("Order", StringComparison.OrdinalIgnoreCase) ? "orders"
+                            : menu.ActionName.ToLowerInvariant();
+                        <a class="nav-item nav-link @(page == Model.InitialPage ? "is-active" : "")" href="@Url.Action(menu.ActionName, menu.ControllerName)">
+                            <span class="nav-icon">@icon</span><span class="nav-text">@menu.Name</span>
+                        </a>
+                    }
+                }
+            </nav>
+        </aside>
+
+        <main class="main-area" id="mainArea" data-initial-page="@Model.InitialPage">
+            @if (dashboardMenu is not null)
+            {
+            <section class="page-view" data-page="dashboard">
+                <div class="page-heading">
+                    <div><span class="eyebrow">SUNDAY, OCTOBER 11, 2026</span><h1>Dashboard</h1><p>Here’s what’s happening at your restaurant today.</p></div>
+                    <div class="breadcrumb"><span>Workspace</span><b>/</b><strong>Dashboard</strong></div>
+                </div>
+                <div class="metric-grid">
+                    <article class="metric-card searchable" data-search-item="total menus 48">
+                        <div><span class="metric-label">Total menus</span><strong class="metric-value" data-metric="menus">48</strong><span class="metric-note"><i>↗</i> 12% <span>vs last month</span></span></div>
+                        <span class="metric-icon menu-metric">◈</span>
+                    </article>
+                    <article class="metric-card searchable" data-search-item="total revenue 87561">
+                        <div><span class="metric-label">Total revenue</span><strong class="metric-value">$8,561</strong><span class="metric-note"><i>↗</i> 8.4% <span>vs last month</span></span></div>
+                        <span class="metric-icon revenue-metric">$</span>
+                    </article>
+                    <article class="metric-card searchable" data-search-item="total orders 247">
+                        <div><span class="metric-label">Total orders</span><strong class="metric-value" data-metric="orders">247</strong><span class="metric-note"><i>↗</i> 5.2% <span>vs last month</span></span></div>
+                        <span class="metric-icon order-metric">▤</span>
+                    </article>
+                    <article class="metric-card searchable" data-search-item="total customers 872">
+                        <div><span class="metric-label">Total customers</span><strong class="metric-value">872</strong><span class="metric-note"><i>↗</i> 3.8% <span>vs last month</span></span></div>
+                        <span class="metric-icon customer-metric">◎</span>
+                    </article>
+                </div>
+
+                <section class="panel revenue-panel">
+                    <div class="panel-heading revenue-heading">
+                        <div><h2>Today's revenue</h2><p>A little progress goes a long way.</p></div>
+                        <div class="revenue-total"><strong id="revenueTotal">$2,408.50</strong><span><i>↗</i> 6.2% <small>than yesterday</small></span></div>
+                    </div>
+                    <div class="chart-toolbar"><span class="chart-key"><i></i>Revenue</span><div class="period-switch" role="group" aria-label="Revenue chart period"><button type="button" class="is-selected" data-period="week">Week</button><button type="button" data-period="month">Month</button><button type="button" data-period="today">Today</button></div></div>
+                    <div class="revenue-chart" id="revenueChart" aria-label="Revenue bar chart">
+                        <div class="chart-gridlines"><i>$3k</i><i>$2k</i><i>$1k</i><i>$0</i></div>
+                        <div class="chart-bars" id="chartBars"></div>
+                    </div>
+                </section>
+
+                <div class="dashboard-lower">
+                    @if (dishesMenu is not null)
+                    {
+                    <section class="panel trending-panel">
+                        <div class="panel-heading"><div><h2>Today's trending menus</h2><p>Your most-loved dishes, by orders.</p></div><a class="text-action" href="@Url.Action(dishesMenu.ActionName, dishesMenu.ControllerName)">View dishes <span>→</span></a></div>
+                        <div class="trending-list">
+                            <article class="trending-item searchable" data-search-item="classic masala dosa menu 89"><span class="rank">01</span><span class="dish-thumb dish-one">D</span><div class="dish-info"><strong>Classic masala dosa</strong><small>Breakfast · South Indian</small></div><div class="dish-orders"><strong>89</strong><small>orders</small></div><strong class="dish-price">$8.50</strong></article>
+                            <article class="trending-item searchable" data-search-item="paneer butter masala menu 76"><span class="rank">02</span><span class="dish-thumb dish-two">P</span><div class="dish-info"><strong>Paneer butter masala</strong><small>Main course · North Indian</small></div><div class="dish-orders"><strong>76</strong><small>orders</small></div><strong class="dish-price">$12.00</strong></article>
+                            <article class="trending-item searchable" data-search-item="mango lassi menu 63"><span class="rank">03</span><span class="dish-thumb dish-three">M</span><div class="dish-info"><strong>Fresh mango lassi</strong><small>Drinks · House favourite</small></div><div class="dish-orders"><strong>63</strong><small>orders</small></div><strong class="dish-price">$4.50</strong></article>
+                            <article class="trending-item searchable" data-search-item="tandoori roti menu 51"><span class="rank">04</span><span class="dish-thumb dish-four">T</span><div class="dish-info"><strong>Butter tandoori roti</strong><small>Sides · Fresh from tandoor</small></div><div class="dish-orders"><strong>51</strong><small>orders</small></div><strong class="dish-price">$2.50</strong></article>
+                        </div>
+                    </section>
+                    }
+                    @if (ordersMenu is not null)
+                    {
+                    <section class="panel orders-panel">
+                        <div class="panel-heading"><div><h2>Recent orders</h2><p>Keep service moving smoothly.</p></div><a class="text-action" href="@Url.Action(ordersMenu.ActionName, ordersMenu.ControllerName)">See all <span>→</span></a></div>
+                        <div class="table-scroll"><table class="data-table"><thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th>@if (ordersMenu.CanDelete) { <th>Actions</th> }</tr></thead><tbody data-orders-body data-compact="true" data-can-update="@ordersMenu.CanUpdate.ToString().ToLowerInvariant()" data-can-delete="@ordersMenu.CanDelete.ToString().ToLowerInvariant()"></tbody></table></div>
+                    </section>
+                    }
+                </div>
+            </section>
+            }
+
+            @if (ordersMenu is not null)
+            {
+            <section class="page-view is-hidden" data-page="orders">
+                <div class="page-heading"><div><span class="eyebrow">SERVICE · LIVE</span><h1>Orders</h1><p>Track every order from the kitchen to the table.</p></div>@if (ordersMenu.CanInsert) { <button class="primary-button" type="button" data-open-order><span>＋</span> Add order</button> }</div>
+                <section class="panel page-panel"><div class="panel-heading"><div><h2>All orders</h2><p class="order-summary">Your latest restaurant orders.</p></div><select class="table-filter" id="orderFilter" aria-label="Filter orders"><option value="all">All orders</option><option value="Preparing">Preparing</option><option value="Ready">Ready</option><option value="Served">Served</option></select></div><div class="table-scroll"><table class="data-table full-table"><thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Time</th><th>Total</th><th>Status</th>@if (ordersMenu.CanDelete) { <th>Actions</th> }</tr></thead><tbody data-orders-body data-compact="false" data-can-update="@ordersMenu.CanUpdate.ToString().ToLowerInvariant()" data-can-delete="@ordersMenu.CanDelete.ToString().ToLowerInvariant()"></tbody></table></div></section>
+            </section>
+            }
+
+            @if (dishesMenu is not null)
+            {
+            <section class="page-view is-hidden" data-page="dishes">
+                <div class="page-heading"><div><span class="eyebrow">KITCHEN · CATALOG</span><h1>Dishes</h1><p>Keep your menu fresh and ready for service.</p></div>@if (dishesMenu.CanInsert) { <button class="primary-button" type="button" id="addMenuButton"><span>＋</span> Add dish</button> }</div>
+                <section class="panel page-panel"><div class="panel-heading"><div><h2>Popular menu items</h2><p>Manage today's availability and add a dish.</p></div><span class="menu-summary">4 dishes</span></div><div class="menu-management-list" data-can-update="@dishesMenu.CanUpdate.ToString().ToLowerInvariant()" data-can-delete="@dishesMenu.CanDelete.ToString().ToLowerInvariant()">
+                    <article class="managed-menu searchable" data-search-item="classic masala dosa breakfast 8.50"><span class="dish-thumb dish-one">D</span><div class="dish-info"><strong>Classic masala dosa</strong><small>Breakfast · South Indian · $8.50</small></div><span class="menu-sold">89 orders</span><label class="availability-toggle"><input type="checkbox" checked disabled="@(!dishesMenu.CanUpdate)" /><span></span><small>Available</small></label>@if (dishesMenu.CanDelete) { <button class="item-delete-button" type="button" data-dish-delete aria-label="Delete Classic masala dosa">Delete</button> }</article>
+                    <article class="managed-menu searchable" data-search-item="paneer butter masala main course 12"><span class="dish-thumb dish-two">P</span><div class="dish-info"><strong>Paneer butter masala</strong><small>Main course · North Indian · $12.00</small></div><span class="menu-sold">76 orders</span><label class="availability-toggle"><input type="checkbox" checked disabled="@(!dishesMenu.CanUpdate)" /><span></span><small>Available</small></label>@if (dishesMenu.CanDelete) { <button class="item-delete-button" type="button" data-dish-delete aria-label="Delete Paneer butter masala">Delete</button> }</article>
+                    <article class="managed-menu searchable" data-search-item="fresh mango lassi drinks 4.50"><span class="dish-thumb dish-three">M</span><div class="dish-info"><strong>Fresh mango lassi</strong><small>Drinks · House favourite · $4.50</small></div><span class="menu-sold">63 orders</span><label class="availability-toggle"><input type="checkbox" checked disabled="@(!dishesMenu.CanUpdate)" /><span></span><small>Available</small></label>@if (dishesMenu.CanDelete) { <button class="item-delete-button" type="button" data-dish-delete aria-label="Delete Fresh mango lassi">Delete</button> }</article>
+                    <article class="managed-menu searchable" data-search-item="butter tandoori roti sides 2.50"><span class="dish-thumb dish-four">T</span><div class="dish-info"><strong>Butter tandoori roti</strong><small>Sides · Fresh from tandoor · $2.50</small></div><span class="menu-sold">51 orders</span><label class="availability-toggle"><input type="checkbox" checked disabled="@(!dishesMenu.CanUpdate)" /><span></span><small>Available</small></label>@if (dishesMenu.CanDelete) { <button class="item-delete-button" type="button" data-dish-delete aria-label="Delete Butter tandoori roti">Delete</button> }</article>
+                </div></section>
+            </section>
+            }
+
+            @if (categoriesMenu is not null)
+            {
+            <section class="page-view is-hidden" data-page="categories">
+                <div class="page-heading"><div><span class="eyebrow">KITCHEN · CATALOG</span><h1>Categories</h1><p>Browse categories configured for your restaurant.</p></div></div>
+                <section class="panel page-panel">
+                    <div class="panel-heading"><div><h2>Categories</h2><p>@Model.Categories.Count categories configured.</p></div></div>
+                    <div class="table-scroll">
+                        <table class="data-table full-table">
+                            <thead><tr><th>Image</th><th>Name</th><th>Status</th></tr></thead>
+                            <tbody>
+                                @if (Model.Categories.Count == 0)
+                                {
+                                    <tr><td colspan="3">No categories have been added yet.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var category in Model.Categories)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @if (!string.IsNullOrWhiteSpace(category.Img))
+                                                {
+                                                    <img class="category-image" src="@category.Img" alt="@category.Name" loading="lazy" />
+                                                }
+                                                else
+                                                {
+                                                    <span class="category-image-placeholder" aria-hidden="true">◈</span>
+                                                }
+                                            </td>
+                                            <td>@category.Name</td>
+                                            <td><span class="status-pill @(category.IsActive ? "status-ready" : "status-served")">@(category.IsActive ? "Active" : "Inactive")</span></td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+            }
+
+            <footer class="main-footer"><span>© 2026 Anjani's Kitchen</span><span><i class="open-indicator"></i> All systems operational</span></footer>
+        </main>
+    </div>
+
+    @if (ordersMenu?.CanInsert == true)
+    {
+    <dialog class="order-dialog" id="orderDialog">
+        <form id="orderForm" method="dialog">
+            <div class="dialog-heading"><div><span class="eyebrow">NEW TICKET</span><h2>Add an order</h2></div><button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button></div>
+            <label>Customer name<input name="customer" required maxlength="40" placeholder="e.g. Neha Joshi" /></label>
+            <div class="dialog-fields"><label>Items<input name="items" required maxlength="60" placeholder="e.g. 2 × Masala dosa" /></label><label>Total ($)<input name="total" required type="number" min="1" step="0.01" placeholder="24.50" /></label></div>
+            <button class="primary-button dialog-submit" type="submit">Create order</button>
+        </form>
+    </dialog>
+    }
+    @if (dishesMenu?.CanInsert == true)
+    {
+    <dialog class="order-dialog" id="menuDialog">
+        <form id="menuForm" method="dialog">
+            <div class="dialog-heading"><div><span class="eyebrow">MENU BUILDER</span><h2>Add a dish</h2></div><button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button></div>
+            <label>Dish name<input name="name" required maxlength="50" placeholder="e.g. Saffron rice bowl" /></label>
+            <div class="dialog-fields"><label>Category<input name="category" required maxlength="30" placeholder="e.g. Main course" /></label><label>Price ($)<input name="price" required type="number" min="0.5" step="0.01" placeholder="9.50" /></label></div>
+            <button class="primary-button dialog-submit" type="submit">Add to menu</button>
+        </form>
+    </dialog>
+    }
+    <div class="toast-message" id="toastMessage" role="status" aria-live="polite"></div>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+</body>
+</html>

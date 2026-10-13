@@ -1,0 +1,48 @@
+@{
+    Layout = null;
+    ViewData["Title"] = "Sign in";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Anjani's Kitchen</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body class="login-body">
+    <main class="login-layout">
+        <section class="login-story" aria-label="Anjani Kitchen">
+            <img src="~/img/login_banner.jpg" alt="A freshly prepared meal served at a restaurant" />
+            <div class="story-shade"></div>
+            <a class="login-brand" href="/" aria-label="Anjani Kitchen home"><span class="brand-mark">AK</span><span><strong>Anjani's</strong><small>KITCHEN ADMIN</small></span></a>
+            <div class="story-copy"><span class="story-kicker"><i></i> MADE WITH HEART, SERVED WITH PRIDE</span><h1>A little more<br />love in every<br /><em>service.</em></h1><p>Your restaurant, your people, your day. All in one place.</p></div>
+            <div class="story-bottom"><span>ANJANI'S KITCHEN</span><span>FRESH · WARM · ALWAYS</span></div>
+        </section>
+        <section class="login-panel">
+            <div class="login-form-wrap">
+                <span class="login-overline">WELCOME BACK</span>
+                <h2>Sign in to your<br />workspace<span>.</span></h2>
+                <p class="login-intro">Your kitchen is in good hands. Let's get you in.</p>
+                <form class="login-form" method="post" action="/Home/Login">
+                    @Html.AntiForgeryToken()
+                    @if (ViewData["LoginError"] is string error)
+                    {
+                        <div class="login-error" role="alert">@error</div>
+                    }
+                    <label for="username">Username</label>
+                    <input id="username" name="username" type="text" autocomplete="username" placeholder="Enter your username" required autofocus />
+                    <label for="password">Password</label>
+                    <div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required /><button class="password-toggle" type="button" data-password-toggle aria-label="Show password">Show</button></div>
+                    <button class="login-submit" type="submit">Sign in <span aria-hidden="true">→</span></button>
+                </form>
+            </div>
+            <div class="login-copyright">© 2026 Anjani's Kitchen <span>·</span> Made for the people behind every plate.</div>
+        </section>
+    </main>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+</body>
+</html>
