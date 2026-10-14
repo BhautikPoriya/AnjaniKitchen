@@ -213,8 +213,18 @@ button { color: inherit; }
 .dish-orders small { margin-top: 3px; color: #a1a2aa; font-size: 8px; }
 .dish-price { width: 42px; color: #555763; font-size: 10px; text-align: right; }
 .table-scroll { width: 100%; overflow-x: auto; }
-.category-image, .category-image-placeholder { display: inline-grid; width: 38px; height: 38px; place-items: center; border-radius: 6px; object-fit: cover; }
+.category-image, .category-image-placeholder { display: inline-grid; width: 200px; height: 100px; place-items: center; border-radius: 6px; object-fit: cover; }
+.dish-image { width: 72px; height: 54px; border-radius: 5px; object-fit: cover; }
 .category-image-placeholder { background: var(--violet-soft); color: var(--violet); font-size: 18px; }
+.category-actions { white-space: nowrap; }
+.category-image-note { margin: -7px 0 12px; color: var(--muted); font-size: 10px; }
+.category-image-current { display: flex; align-items: center; gap: 12px; margin: -7px 0 12px; }
+.category-image-preview { width: 96px; height: 64px; border-radius: 6px; object-fit: cover; }
+.category-image-controls { display: flex; gap: 8px; }
+.category-image-controls a { text-decoration: none; }
+.category-filter { display: flex; align-items: center; gap: 10px; }
+.category-filter label, .category-parent-label { color: var(--muted); font-size: 10px; }
+.category-parent-label { display: block; margin-top: 4px; }
 .data-table { width: 100%; border-collapse: collapse; text-align: left; }
 .data-table thead th { padding: 13px 7px 10px; border-bottom: 1px solid #efeff1; color: #9b9ca5; font-size: 9px; font-weight: 600; white-space: nowrap; }
 .data-table tbody td { padding: 13px 7px; border-bottom: 1px solid #f3f3f5; color: #6c6e78; font-size: 10px; white-space: nowrap; }
@@ -237,8 +247,8 @@ button.status-pill { cursor: pointer; }
 .page-panel { padding: 21px 22px 14px; }
 .page-panel > .panel-heading { min-height: 55px; }
 .table-filter { min-width: 125px; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; outline: 0; background: white; color: #686a76; font-size: 11px; }
-.full-table thead th { padding: 13px 12px; font-size: 10px; }
-.full-table tbody td { padding: 15px 12px; font-size: 11px; }
+.full-table thead th { padding: 13px 12px; font-size: 18px; }
+.full-table tbody td { padding: 15px 12px; font-size: 16px; }
 .table-person { display: inline-flex; align-items: center; gap: 9px; color: var(--ink); }
 .person-avatar { display: inline-grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border-radius: 50%; font-size: 9px; font-style: normal; font-weight: 700; }
 .person-avatar.peach { background: #f9e9df; color: #a7674c; }
@@ -293,7 +303,16 @@ button.status-pill { cursor: pointer; }
 .dialog-close { width: 30px; height: 30px; border: 0; border-radius: 50%; background: #f5f5f7; color: #777984; cursor: pointer; font-size: 20px; }
 .order-dialog label { display: flex; flex: 1; flex-direction: column; gap: 7px; margin-bottom: 15px; font-size: 10px; font-weight: 700; }
 .order-dialog input { width: 100%; height: 42px; padding: 0 11px; border: 1px solid #e5e5e9; border-radius: 4px; outline: 0; font-size: 11px; }
+.order-dialog select { width: 100%; height: 42px; padding: 0 11px; border: 1px solid #e5e5e9; border-radius: 4px; outline: 0; background: white; color: var(--ink); font-size: 11px; }
 .order-dialog input:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(116,98,223,.1); }
+.order-dialog select:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(116,98,223,.1); }
+.order-dialog textarea { width: 100%; min-height: 76px; padding: 10px 11px; border: 1px solid #e5e5e9; border-radius: 4px; outline: 0; resize: vertical; font: inherit; font-size: 11px; }
+.order-dialog textarea:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(116,98,223,.1); }
+.order-dialog input[type="file"] { height: auto; padding: 10px; }
+.dish-form-flags { display: flex; gap: 20px; }
+.order-dialog .dish-form-flags label { flex-direction: row; align-items: center; gap: 8px; }
+.order-dialog .dish-form-flags input { width: auto; height: auto; margin: 0; }
+.order-dialog button:disabled { cursor: wait; opacity: .65; }
 .dialog-fields { display: flex; gap: 12px; }
 .dialog-submit { width: 100%; margin-top: 4px; }
 .toast-message { position: fixed; z-index: 60; right: 22px; bottom: 22px; max-width: min(360px, calc(100vw - 44px)); padding: 12px 16px; border-radius: 5px; background: var(--ink); color: white; box-shadow: 0 8px 25px rgba(23,25,37,.2); font-size: 11px; opacity: 0; pointer-events: none; transform: translateY(8px); transition: opacity .2s, transform .2s; }

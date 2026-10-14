@@ -38,9 +38,12 @@ public class HomeController : Controller
             "dishes" => "dishes",
             _ => null
         };
-        if (initialPage == "categories")
+        if (initialPage is "categories" or "dishes")
         {
-            return RedirectToAction(nameof(CatalogController.Categories), "Catalog");
+            var catalogAction = initialPage == "categories"
+                ? nameof(CatalogController.Categories)
+                : nameof(CatalogController.Dishes);
+            return RedirectToAction(catalogAction, "Catalog");
         }
 
         if (initialPage is null || FindPageMenu(menus, initialPage) is null)

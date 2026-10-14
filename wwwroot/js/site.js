@@ -196,7 +196,55 @@
 
 	const orderDialog = document.getElementById("orderDialog");
 	const menuDialog = document.getElementById("menuDialog");
+	const categoryDialog = document.getElementById("categoryDialog");
+	const categoryForm = document.getElementById("categoryForm");
+	const categoryParentFilter = document.getElementById("categoryParentFilter");
+	const categoryParentId = document.getElementById("categoryParentId");
+	const categoryImageInput = categoryForm?.querySelector('[name="Image"]');
+	const addSubcategoryButton = document.getElementById("addSubcategoryButton");
+
+	function applyCategoryFilter() {
+		if (!categoryParentFilter) return;
+		const selectedParentId = categoryParentFilter.value;
+		const rows = [...document.querySelectorAll("#categoryTableBody [data-category-row]")];
+		rows.forEach(row => {
+			row.hidden = selectedParentId
+				? row.dataset.parentId !== selectedParentId
+				: false;
+		});
+		if (addSubcategoryButton) addSubcategoryButton.disabled = !selectedParentId;
+		const visibleCount = rows.filter(row => !row.hidden).length;
+		const summary = document.getElementById("categorySummary");
+		if (summary) {
+			const selectedOption = categoryParentFilter.selectedOptions[0];
+			summary.textContent = selectedParentId
+				? `${visibleCount} subcategories under ${selectedOption.textContent}.`
+				: `${visibleCount} categories configured.`;
+		}
+	}
+
+	function updateCategoryImageRequirement() {
+		if (categoryImageInput) {
+			categoryImageInput.required = !categoryForm.action.includes("/UpdateCategory/") && !categoryParentId.value;
+		}
+	}
+
+	categoryParentFilter?.addEventListener("change", applyCategoryFilter);
+	categoryParentId?.addEventListener("change", updateCategoryImageRequirement);
 	document.querySelectorAll("[data-open-order]").forEach(button => button.addEventListener("click", () => orderDialog?.showModal()));
+	document.getElementById("addCategoryButton")?.addEventListener("click", () => {
+		if (!categoryForm) return;
+		categoryForm.reset();
+		categoryForm.action = categoryForm.dataset.createAction;
+		categoryParentId.disabled = false;
+		updateCategoryImageRequirement();
+		document.getElementById("categoryCurrentImage").hidden = true;
+		document.getElementById("categoryRemoveImage").value = "false";
+		document.getElementById("categoryDialogTitle").textContent = "Add a category";
+		document.getElementById("categorySubmitButton").textContent = "Create category";
+		document.getElementById("categoryImageNote").hidden = true;
+		categoryDialog?.showModal();
+	});
 	document.querySelectorAll("[data-close-dialog]").forEach(button => button.addEventListener("click", () => button.closest("dialog").close()));
 	document.getElementById("orderForm")?.addEventListener("submit", event => {
 		event.preventDefault();
@@ -209,45 +257,351 @@
 		renderOrders(); form.reset(); orderDialog.close(); notify("Order added to the kitchen queue.");
 	});
 
-	document.getElementById("addMenuButton")?.addEventListener("click", () => menuDialog?.showModal());
-	document.getElementById("menuForm")?.addEventListener("submit", event => {
+	const dishForm = document.getElementById("menuForm");
+	const dishTableBody = document.getElementById("dishTableBody");
+	const dishSubmitButton = document.getElementById("dishSubmitButton");
+	const dishImageInput = dishForm?.querySelector('[name="Image"]');
+
+	function resetDishImageState() {
+		document.getElementById("dishCurrentImage").hidden = true;
+		document.getElementById("dishRemoveImage").value = "false";
+	}
+
+	function renderDishRow(dish) {
+		const categoryName = dish.parentCategoryName
+			? `${dish.parentCategoryName} · ${dish.categoryName}`
+			: dish.categoryName;
+		const actions = `${dishTableBody.dataset.canUpdate === "true"
+			? `<button class="item-delete-button" type="button" data-dish-edit data-id="${dish.id}" data-name="${escapeHtml(dish.name)}" data-price="${dish.price}" data-old-price="${dish.oldPrice ?? ""}" data-description="${escapeHtml(dish.description)}" data-category-id="${dish.categoryId}" data-image-url="${escapeHtml(dish.imageUrl || "")}" data-is-new="${dish.isNew}" data-is-active="${dish.isActive}">Edit</button>`
+			: ""}${dishTableBody.dataset.canDelete === "true"
+			? `<button class="item-delete-button" type="button" data-dish-delete data-id="${dish.id}" data-name="${escapeHtml(dish.name)}">Delete</button>`
+			: ""}`;
+		return `<tr data-dish-row="${dish.id}">
+			<td>${dish.imageUrl
+				? `<img class="dish-image" src="${escapeHtml(dish.imageUrl)}" alt="${escapeHtml(dish.name)}" loading="lazy" />`
+				: '<span class="category-image-placeholder" aria-hidden="true">◈</span>'}</td>
+			<td>${escapeHtml(dish.name)}</td>
+			<td>${escapeHtml(categoryName)}</td>
+			<td>${Number(dish.price).toFixed(2)}</td>
+			<td>${dish.oldPrice == null ? "—" : Number(dish.oldPrice).toFixed(2)}</td>
+			<td>${escapeHtml(dish.description || "")}</td>
+			<td>${dish.isNew ? "Yes" : "—"}</td>
+			<td><span class="status-pill ${dish.isActive ? "status-ready" : "status-served"}">${dish.isActive ? "Active" : "Inactive"}</span></td>
+			${actions ? `<td class="category-actions">${actions}</td>` : ""}
+		</tr>`;
+	}
+
+	function updateDishSummary() {
+		const count = dishTableBody.querySelectorAll("[data-dish-row]").length;
+		document.getElementById("dishSummary").textContent = `${count} dishes configured.`;
+	}
+
+	document.getElementById("addMenuButton")?.addEventListener("click", () => {
+		dishForm.reset();
+		dishForm.action = dishForm.dataset.createAction;
+		dishImageInput.required = true;
+		resetDishImageState();
+		document.getElementById("dishSubmitButton").textContent = "Add dish";
+		document.querySelector("#menuDialog .dialog-heading h2").textContent = "Add a dish";
+		menuDialog?.showModal();
+	});
+	dishForm?.addEventListener("submit", async event => {
+		event.preventDefault();
+		dishSubmitButton.disabled = true;
+		try {
+			const image = dishImageInput.files[0];
+			if (image) {
+				const extension = image.name.split(".").pop().toLowerCase();
+				const expectedType = extension === "png"
+					? "image/png"
+					: (extension === "jpg" || extension === "jpeg") ? "image/jpeg" : null;
+				if (!expectedType || image.type && image.type !== expectedType) {
+					notify("Choose a JPG, JPEG, or PNG image.");
+					return;
+				}
+				if (image.size > 5 * 1024 * 1024) {
+					notify("Choose a JPG, JPEG, or PNG image up to 5 MB.");
+					return;
+				}
+			}
+			const data = new FormData(dishForm);
+			data.set("IsNew", dishForm.querySelector('[name="IsNew"]').checked ? "true" : "false");
+			data.set("IsActive", dishForm.querySelector('[name="IsActive"]').checked ? "true" : "false");
+			data.set("RemoveImage", dishForm.querySelector('[name="RemoveImage"]').value);
+			const isUpdate = dishForm.action.includes("/UpdateDish/");
+			const response = await fetch(dishForm.action, { method: "POST", body: data });
+			const responseText = await response.text();
+			let result;
+			try {
+				result = JSON.parse(responseText);
+			} catch {
+				throw new Error(response.ok
+					? "The server returned an invalid response while saving the dish."
+					: `Dish could not be saved (HTTP ${response.status}).`);
+			}
+			if (!response.ok) throw new Error(result.error || "Dish could not be saved.");
+
+			dishTableBody.querySelector("td[colspan]")?.closest("tr")?.remove();
+			const existingRow = dishTableBody.querySelector(`[data-dish-row="${result.id}"]`);
+			if (existingRow) existingRow.outerHTML = renderDishRow(result);
+			else dishTableBody.insertAdjacentHTML("beforeend", renderDishRow(result));
+			updateDishSummary();
+			dishForm.reset();
+			dishImageInput.required = true;
+			resetDishImageState();
+			menuDialog.close();
+			notify(result.warning || `${result.name} dish ${isUpdate ? "updated" : "added"}.`);
+			dishForm.action = dishForm.dataset.createAction;
+		} catch (error) {
+			notify(error instanceof TypeError
+				? "Could not reach the server while saving. Check your connection and try again."
+				: error.message || "Dish could not be saved.");
+		} finally {
+			dishSubmitButton.disabled = false;
+		}
+	});
+	document.addEventListener("click", async event => {
+		const editButton = event.target.closest("[data-dish-edit]");
+		if (editButton && dishForm) {
+			dishForm.reset();
+			dishForm.action = `${dishTableBody.dataset.updateUrl}/${encodeURIComponent(editButton.dataset.id)}`;
+			dishForm.querySelector('[name="Name"]').value = editButton.dataset.name;
+			dishForm.querySelector('[name="CategoryId"]').value = editButton.dataset.categoryId;
+			dishForm.querySelector('[name="Price"]').value = editButton.dataset.price;
+			dishForm.querySelector('[name="OldPrice"]').value = editButton.dataset.oldPrice;
+			dishForm.querySelector('[name="Description"]').value = editButton.dataset.description;
+			dishForm.querySelector('[name="IsNew"]').checked = editButton.dataset.isNew === "true";
+			dishForm.querySelector('[name="IsActive"]').checked = editButton.dataset.isActive === "true";
+			dishImageInput.required = false;
+			document.getElementById("dishRemoveImage").value = "false";
+			const currentImage = document.getElementById("dishCurrentImage");
+			if (editButton.dataset.imageUrl) {
+				const preview = document.getElementById("dishImagePreview");
+				const download = document.getElementById("dishImageDownload");
+				const downloadUrl = new URL(editButton.dataset.imageUrl, window.location.origin);
+				preview.src = editButton.dataset.imageUrl;
+				preview.alt = `${editButton.dataset.name} dish image`;
+				if (downloadUrl.hostname === "res.cloudinary.com") {
+					downloadUrl.pathname = downloadUrl.pathname.replace("/image/upload/", "/image/upload/fl_attachment/");
+				}
+				download.href = downloadUrl.toString();
+				download.download = `${editButton.dataset.name}-dish`;
+				currentImage.hidden = false;
+			} else {
+				currentImage.hidden = true;
+			}
+			document.querySelector("#menuDialog .dialog-heading h2").textContent = "Edit dish";
+			dishSubmitButton.textContent = "Save changes";
+			menuDialog?.showModal();
+			return;
+		}
+
+		const removeDishImageButton = event.target.closest("#dishImageRemove");
+		if (removeDishImageButton && dishForm) {
+			document.getElementById("dishRemoveImage").value = "true";
+			document.getElementById("dishCurrentImage").hidden = true;
+			return;
+		}
+
+		const deleteButton = event.target.closest("[data-dish-delete]");
+		if (!deleteButton || !dishTableBody || !window.confirm(`Delete "${deleteButton.dataset.name}"?`)) return;
+
+		deleteButton.disabled = true;
+		try {
+			const data = new FormData();
+			data.append("__RequestVerificationToken", dishForm.querySelector('[name="__RequestVerificationToken"]').value);
+			const response = await fetch(`${dishTableBody.dataset.deleteUrl}/${encodeURIComponent(deleteButton.dataset.id)}`, {
+				method: "POST",
+				body: data
+			});
+			const responseText = await response.text();
+			let result;
+			try {
+				result = JSON.parse(responseText);
+			} catch {
+				throw new Error(response.ok
+					? "The server returned an invalid response while deleting the dish."
+					: `Dish could not be deleted (HTTP ${response.status}).`);
+			}
+			if (!response.ok) throw new Error(result.error || "Dish could not be deleted.");
+			deleteButton.closest("[data-dish-row]").remove();
+			if (dishTableBody.querySelectorAll("[data-dish-row]").length === 0) {
+				const columnCount = dishTableBody.dataset.canUpdate === "true" || dishTableBody.dataset.canDelete === "true" ? 9 : 8;
+				dishTableBody.innerHTML = `<tr><td colspan="${columnCount}">No dishes have been added yet.</td></tr>`;
+			}
+			updateDishSummary();
+			notify(result.warning || `${deleteButton.dataset.name} dish deleted.`);
+		} catch (error) {
+			notify(error instanceof TypeError
+				? "Could not reach the server while deleting. Check your connection and try again."
+				: error.message || "Dish could not be deleted.");
+			deleteButton.disabled = false;
+		}
+	});
+	categoryForm?.addEventListener("submit", async event => {
 		event.preventDefault();
 		const form = event.currentTarget;
-		const values = new FormData(form);
-		const name = values.get("name").trim();
-		const category = values.get("category").trim();
-		const price = Number(values.get("price")).toFixed(2);
-		const item = document.createElement("article");
-		item.className = "managed-menu searchable";
-		item.dataset.searchItem = `${name} ${category} ${price}`.toLowerCase();
-		const menuList = document.querySelector(".menu-management-list");
-		const canUpdate = menuList.dataset.canUpdate === "true";
-		const canDelete = menuList.dataset.canDelete === "true";
-		item.innerHTML = `<span class="dish-thumb dish-one">${escapeHtml(name.charAt(0).toUpperCase())}</span><div class="dish-info"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(category)} · $${price}</small></div><span class="menu-sold">New item</span><label class="availability-toggle"><input type="checkbox" checked ${canUpdate ? "" : "disabled"} /><span></span><small>Available</small></label>${canDelete ? '<button class="item-delete-button" type="button" data-dish-delete>Delete</button>' : ""}`;
-		menuList.prepend(item);
-		document.querySelector(".menu-summary").textContent = `${document.querySelectorAll(".managed-menu").length} dishes`;
-		const metric = document.querySelector('[data-metric="menus"]');
-		if (metric) metric.textContent = String(Number(metric.textContent) + 1);
-		form.reset(); menuDialog.close(); notify(`${name} added to your menu.`);
-	});
-	document.addEventListener("change", event => {
-		if (!event.target.matches(".availability-toggle input")) return;
-		if (event.target.disabled) return;
-		const label = event.target.closest(".availability-toggle").querySelector("small");
-		label.textContent = event.target.checked ? "Available" : "Sold out";
-		notify(`${event.target.closest(".managed-menu").querySelector(".dish-info strong").textContent} marked ${label.textContent.toLowerCase()}.`);
-	});
-	document.addEventListener("click", event => {
-		const deleteButton = event.target.closest("[data-dish-delete]");
-		if (deleteButton) {
-			const menuList = deleteButton.closest(".menu-management-list");
-			if (menuList?.dataset.canDelete !== "true") return;
-			deleteButton.closest(".managed-menu").remove();
-			document.querySelector(".menu-summary").textContent = `${document.querySelectorAll(".managed-menu").length} dishes`;
-			const metric = document.querySelector('[data-metric="menus"]');
-			if (metric) metric.textContent = String(Math.max(0, Number(metric.textContent) - 1));
-			notify("Dish removed from your menu.");
+		const submitButton = form.querySelector('[type="submit"]');
+		const imageInput = form.querySelector('[name="Image"]');
+		const isUpdate = form.action.includes("/UpdateCategory/");
+		const image = imageInput.files[0];
+		if (image) {
+			const extension = image.name.split(".").pop().toLowerCase();
+			const expectedType = extension === "png"
+				? "image/png"
+				: (extension === "jpg" || extension === "jpeg") ? "image/jpeg" : null;
+			const supportedType = expectedType && (!image.type || image.type === expectedType);
+			if (!supportedType) {
+				notify("Choose a JPG, JPEG, or PNG image.");
+				return;
+			}
+		}
+		if (image && image.size > 5 * 1024 * 1024) {
+			notify("Choose a JPG, JPEG, or PNG image up to 5 MB.");
 			return;
+		}
+		submitButton.disabled = true;
+
+		try {
+			const data = new FormData(form);
+			if (isUpdate && !imageInput.files.length) data.delete("Image");
+			data.set("RemoveImage", form.querySelector('[name="RemoveImage"]').value);
+			const response = await fetch(form.action, { method: "POST", body: data });
+			const responseText = await response.text();
+			let result;
+			try {
+				result = JSON.parse(responseText);
+			} catch {
+				throw new Error(response.ok
+					? "The server returned an invalid response while saving the category."
+					: `Category could not be saved (HTTP ${response.status}).`);
+			}
+			if (!response.ok) throw new Error(result.error || "Category could not be saved.");
+			const tableBody = document.getElementById("categoryTableBody");
+			tableBody.querySelector("td[colspan]")?.closest("tr")?.remove();
+			const actions = `${tableBody.dataset.canUpdate === "true"
+				? `<button class="item-delete-button" type="button" data-category-edit data-id="${result.id}" data-name="${escapeHtml(result.name)}" data-details="${escapeHtml(result.details)}" data-parent-id="${result.parentId ?? ""}">Edit</button>`
+				: ""}${tableBody.dataset.canDelete === "true"
+				? `<button class="item-delete-button" type="button" data-category-delete data-id="${result.id}" data-name="${escapeHtml(result.name)}">Delete</button>`
+				: ""}`;
+			const rowHtml = `<tr data-category-row="${result.id}" data-parent-id="${result.parentId ?? ""}">
+				<td>${result.imageUrl
+					? `<img class="category-image" src="${escapeHtml(result.imageUrl)}" alt="${escapeHtml(result.name)}" loading="lazy" />`
+					: '<span class="category-image-placeholder" aria-hidden="true">◈</span>'}</td>
+				<td>${escapeHtml(result.name)}${result.parentId
+					? `<small class="category-parent-label">Subcategory of ${escapeHtml(categoryParentId.selectedOptions[0]?.textContent || "")}</small>`
+					: ""}</td>
+				<td>${escapeHtml(result.details)}</td>
+				<td><span class="status-pill status-ready">${result.isActive ? "Active" : "Inactive"}</span></td>
+				${actions ? `<td class="category-actions">${actions}</td>` : ""}
+			</tr>`;
+			const existingRow = tableBody.querySelector(`[data-category-row="${result.id}"]`);
+			if (existingRow) {
+				existingRow.outerHTML = rowHtml;
+			} else {
+				tableBody.insertAdjacentHTML("beforeend", rowHtml);
+			}
+			if (!result.parentId && categoryParentFilter
+				&& ![...categoryParentFilter.options].some(option => option.value === String(result.id))) {
+				categoryParentFilter.add(new Option(result.name, result.id));
+				categoryParentId.add(new Option(result.name, result.id));
+			}
+			applyCategoryFilter();
+			form.reset();
+			categoryParentId.disabled = false;
+			updateCategoryImageRequirement();
+			document.getElementById("categoryCurrentImage").hidden = true;
+			categoryDialog.close();
+			notify(result.warning || `${result.name} category ${isUpdate ? "updated" : "created"}.`);
+		} catch (error) {
+			notify(error instanceof TypeError
+				? "Could not reach the server while saving. Check your connection and try again."
+				: error.message || "Category could not be saved.");
+		} finally {
+			submitButton.disabled = false;
+		}
+	});
+	addSubcategoryButton?.addEventListener("click", () => {
+		if (!categoryForm || !categoryParentFilter.value) return;
+		categoryForm.reset();
+		categoryForm.action = categoryForm.dataset.createAction;
+		categoryParentId.disabled = false;
+		categoryParentId.value = categoryParentFilter.value;
+		updateCategoryImageRequirement();
+		document.getElementById("categoryCurrentImage").hidden = true;
+		document.getElementById("categoryRemoveImage").value = "false";
+		document.getElementById("categoryDialogTitle").textContent = "Add a subcategory";
+		document.getElementById("categorySubmitButton").textContent = "Add subcategory";
+		document.getElementById("categoryImageNote").hidden = false;
+		categoryDialog?.showModal();
+	});
+	document.addEventListener("click", async event => {
+		const editButton = event.target.closest("[data-category-edit]");
+		if (editButton && categoryForm) {
+			categoryForm.reset();
+			categoryForm.action = `${document.getElementById("categoryTableBody").dataset.updateUrl}/${encodeURIComponent(editButton.dataset.id)}`;
+			categoryForm.querySelector('[name="Name"]').value = editButton.dataset.name;
+			categoryForm.querySelector('[name="Details"]').value = editButton.dataset.details;
+			categoryParentId.value = editButton.dataset.parentId || "";
+			categoryParentId.disabled = true;
+			updateCategoryImageRequirement();
+			const existingImage = editButton.closest("tr").querySelector(".category-image");
+			const currentImage = document.getElementById("categoryCurrentImage");
+			if (existingImage) {
+				const preview = document.getElementById("categoryImagePreview");
+				const download = document.getElementById("categoryImageDownload");
+				const downloadUrl = new URL(existingImage.src);
+				preview.src = existingImage.src;
+				preview.alt = `${editButton.dataset.name} category image`;
+				if (downloadUrl.hostname === "res.cloudinary.com") {
+					downloadUrl.pathname = downloadUrl.pathname.replace("/image/upload/", "/image/upload/fl_attachment/");
+				}
+				download.href = downloadUrl.toString();
+				download.download = `${editButton.dataset.name}-category`;
+				currentImage.hidden = false;
+			} else {
+				currentImage.hidden = true;
+			}
+			document.getElementById("categoryRemoveImage").value = "false";
+			document.getElementById("categoryDialogTitle").textContent = "Edit category";
+			document.getElementById("categorySubmitButton").textContent = "Save changes";
+			document.getElementById("categoryImageNote").hidden = false;
+			categoryDialog?.showModal();
+			return;
+		}
+
+		const removeImageButton = event.target.closest("#categoryImageRemove");
+		if (removeImageButton && categoryForm) {
+			document.getElementById("categoryRemoveImage").value = "true";
+			document.getElementById("categoryCurrentImage").hidden = true;
+			return;
+		}
+
+		const deleteButton = event.target.closest("[data-category-delete]");
+		if (!deleteButton || !categoryForm || !window.confirm(`Delete "${deleteButton.dataset.name}" and its image?`)) return;
+		deleteButton.disabled = true;
+		try {
+			const tableBody = document.getElementById("categoryTableBody");
+			const data = new FormData();
+			data.append("__RequestVerificationToken", categoryForm.querySelector('[name="__RequestVerificationToken"]').value);
+			const response = await fetch(`${tableBody.dataset.deleteUrl}/${encodeURIComponent(deleteButton.dataset.id)}`, {
+				method: "POST",
+				body: data
+			});
+			const result = await response.json();
+			if (!response.ok) throw new Error(result.error || "Category could not be deleted.");
+			deleteButton.closest("tr").remove();
+			const remaining = tableBody.querySelectorAll("[data-category-row]").length;
+			const summary = document.querySelector('[data-page="categories"] .page-panel .panel-heading p');
+			if (summary) summary.textContent = `${remaining} categories configured.`;
+			if (remaining === 0) {
+				const columnCount = tableBody.dataset.canUpdate === "true" || tableBody.dataset.canDelete === "true" ? 5 : 4;
+				tableBody.innerHTML = `<tr><td colspan="${columnCount}">No categories have been added yet.</td></tr>`;
+			}
+			notify(result.warning || `${deleteButton.dataset.name} category deleted.`);
+		} catch (error) {
+			notify(error.message || "Category could not be deleted.");
+			deleteButton.disabled = false;
 		}
 	});
 })();

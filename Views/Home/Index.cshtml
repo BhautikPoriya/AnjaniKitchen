@@ -1,7 +1,12 @@
 ﻿@model AnjaniKitchen.Models.DashboardViewModel
 @{
     Layout = null;
-    ViewData["Title"] = Model.InitialPage == "categories" ? "Categories" : "Dashboard";
+    ViewData["Title"] = Model.InitialPage switch
+    {
+        "categories" => "Categories",
+        "dishes" => "Dishes",
+        _ => "Dashboard"
+    };
     var rootMenus = Model.Menus.Where(menu => menu.ParentId is null).ToList();
     var dashboardMenu = Model.Menus.FirstOrDefault(menu => menu.CanView && menu.ControllerName == "Home" && menu.ActionName == "Dashboard");
     var ordersMenu = Model.Menus.FirstOrDefault(menu => menu.CanView && menu.ControllerName == "Order" && menu.ActionName == "Index");
@@ -178,46 +183,133 @@
             {
             <section class="page-view is-hidden" data-page="dishes">
                 <div class="page-heading"><div><span class="eyebrow">KITCHEN · CATALOG</span><h1>Dishes</h1><p>Keep your menu fresh and ready for service.</p></div>@if (dishesMenu.CanInsert) { <button class="primary-button" type="button" id="addMenuButton"><span>＋</span> Add dish</button> }</div>
-                <section class="panel page-panel"><div class="panel-heading"><div><h2>Popular menu items</h2><p>Manage today's availability and add a dish.</p></div><span class="menu-summary">4 dishes</span></div><div class="menu-management-list" data-can-update="@dishesMenu.CanUpdate.ToString().ToLowerInvariant()" data-can-delete="@dishesMenu.CanDelete.ToString().ToLowerInvariant()">
-                    <article class="managed-menu searchable" data-search-item="classic masala dosa breakfast 8.50"><span class="dish-thumb dish-one">D</span><div class="dish-info"><strong>Classic masala dosa</strong><small>Breakfast · South Indian · $8.50</small></div><span class="menu-sold">89 orders</span><label class="availability-toggle"><input type="checkbox" checked disabled="@(!dishesMenu.CanUpdate)" /><span></span><small>Available</small></label>@if (dishesMenu.CanDelete) { <button class="item-delete-button" type="button" data-dish-delete aria-label="Delete Classic masala dosa">Delete</button> }</article>
-                    <article class="managed-menu searchable" data-search-item="paneer butter masala main course 12"><span class="dish-thumb dish-two">P</span><div class="dish-info"><strong>Paneer butter masala</strong><small>Main course · North Indian · $12.00</small></div><span class="menu-sold">76 orders</span><label class="availability-toggle"><input type="checkbox" checked disabled="@(!dishesMenu.CanUpdate)" /><span></span><small>Available</small></label>@if (dishesMenu.CanDelete) { <button class="item-delete-button" type="button" data-dish-delete aria-label="Delete Paneer butter masala">Delete</button> }</article>
-                    <article class="managed-menu searchable" data-search-item="fresh mango lassi drinks 4.50"><span class="dish-thumb dish-three">M</span><div class="dish-info"><strong>Fresh mango lassi</strong><small>Drinks · House favourite · $4.50</small></div><span class="menu-sold">63 orders</span><label class="availability-toggle"><input type="checkbox" checked disabled="@(!dishesMenu.CanUpdate)" /><span></span><small>Available</small></label>@if (dishesMenu.CanDelete) { <button class="item-delete-button" type="button" data-dish-delete aria-label="Delete Fresh mango lassi">Delete</button> }</article>
-                    <article class="managed-menu searchable" data-search-item="butter tandoori roti sides 2.50"><span class="dish-thumb dish-four">T</span><div class="dish-info"><strong>Butter tandoori roti</strong><small>Sides · Fresh from tandoor · $2.50</small></div><span class="menu-sold">51 orders</span><label class="availability-toggle"><input type="checkbox" checked disabled="@(!dishesMenu.CanUpdate)" /><span></span><small>Available</small></label>@if (dishesMenu.CanDelete) { <button class="item-delete-button" type="button" data-dish-delete aria-label="Delete Butter tandoori roti">Delete</button> }</article>
-                </div></section>
-            </section>
-            }
-
-            @if (categoriesMenu is not null)
-            {
-            <section class="page-view is-hidden" data-page="categories">
-                <div class="page-heading"><div><span class="eyebrow">KITCHEN · CATALOG</span><h1>Categories</h1><p>Browse categories configured for your restaurant.</p></div></div>
                 <section class="panel page-panel">
-                    <div class="panel-heading"><div><h2>Categories</h2><p>@Model.Categories.Count categories configured.</p></div></div>
+                    <div class="panel-heading"><div><h2>All dishes</h2><p id="dishSummary">@Model.Dishes.Count dishes configured.</p></div></div>
                     <div class="table-scroll">
                         <table class="data-table full-table">
-                            <thead><tr><th>Image</th><th>Name</th><th>Status</th></tr></thead>
-                            <tbody>
-                                @if (Model.Categories.Count == 0)
+                            <thead><tr><th>Image</th><th>Dish</th><th>Category</th><th>Price</th><th>Old price</th><th>Description</th><th>New</th><th>Status</th>@if (dishesMenu.CanUpdate || dishesMenu.CanDelete) { <th>Actions</th> }</tr></thead>
+                            <tbody id="dishTableBody"
+                                   data-can-update="@dishesMenu.CanUpdate.ToString().ToLowerInvariant()"
+                                   data-can-delete="@dishesMenu.CanDelete.ToString().ToLowerInvariant()"
+                                   data-create-url="@Url.Action("CreateDish", "Catalog")"
+                                   data-update-url="@Url.Action("UpdateDish", "Catalog")"
+                                   data-delete-url="@Url.Action("DeleteDish", "Catalog")">
+                                @if (Model.Dishes.Count == 0)
                                 {
-                                    <tr><td colspan="3">No categories have been added yet.</td></tr>
+                                    <tr><td colspan="@(dishesMenu.CanUpdate || dishesMenu.CanDelete ? 9 : 8)">No dishes have been added yet.</td></tr>
                                 }
                                 else
                                 {
-                                    @foreach (var category in Model.Categories)
+                                    @foreach (var dish in Model.Dishes)
                                     {
-                                        <tr>
+                                        <tr data-dish-row="@dish.Id">
                                             <td>
-                                                @if (!string.IsNullOrWhiteSpace(category.Img))
+                                                @if (!string.IsNullOrWhiteSpace(dish.ImageUrl))
                                                 {
-                                                    <img class="category-image" src="@category.Img" alt="@category.Name" loading="lazy" />
+                                                    <img class="dish-image" src="@dish.ImageUrl" alt="@dish.Name" loading="lazy" />
                                                 }
                                                 else
                                                 {
                                                     <span class="category-image-placeholder" aria-hidden="true">◈</span>
                                                 }
                                             </td>
-                                            <td>@category.Name</td>
+                                            <td>@dish.Name</td>
+                                            <td>@(dish.ParentCategoryName is null ? dish.CategoryName : $"{dish.ParentCategoryName} · {dish.CategoryName}")</td>
+                                            <td>@dish.Price.ToString("0.00")</td>
+                                            <td>@(dish.OldPrice?.ToString("0.00") ?? "—")</td>
+                                            <td>@dish.Description</td>
+                                            <td>@(dish.IsNew ? "Yes" : "—")</td>
+                                            <td><span class="status-pill @(dish.IsActive ? "status-ready" : "status-served")">@(dish.IsActive ? "Active" : "Inactive")</span></td>
+                                            @if (dishesMenu.CanUpdate || dishesMenu.CanDelete)
+                                            {
+                                                <td class="category-actions">
+                                                    @if (dishesMenu.CanUpdate)
+                                                    {
+                                                        <button class="item-delete-button" type="button" data-dish-edit data-id="@dish.Id" data-name="@dish.Name" data-price="@dish.Price" data-old-price="@dish.OldPrice" data-description="@dish.Description" data-category-id="@dish.CategoryId" data-image-url="@dish.ImageUrl" data-is-new="@dish.IsNew.ToString().ToLowerInvariant()" data-is-active="@dish.IsActive.ToString().ToLowerInvariant()">Edit</button>
+                                                    }
+                                                    @if (dishesMenu.CanDelete)
+                                                    {
+                                                        <button class="item-delete-button" type="button" data-dish-delete data-id="@dish.Id" data-name="@dish.Name">Delete</button>
+                                                    }
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+            }
+
+            @if (categoriesMenu is not null)
+            {
+            <section class="page-view is-hidden" data-page="categories">
+                <div class="page-heading"><div><span class="eyebrow">KITCHEN · CATALOG</span><h1>Categories</h1><p>Browse categories configured for your restaurant.</p></div>@if (categoriesMenu.CanInsert) { <button class="primary-button" id="addCategoryButton" type="button"><span>＋</span> Add category</button> }</div>
+                <section class="panel page-panel">
+                    <div class="panel-heading">
+                        <div><h2>Categories</h2><p id="categorySummary">@Model.Categories.Count categories configured.</p></div>
+                        <div class="category-filter">
+                            <label for="categoryParentFilter">Show subcategories for</label>
+                            <select class="table-filter" id="categoryParentFilter">
+                                <option value="">All categories</option>
+                                @foreach (var parentCategory in Model.Categories.Where(category => category.ParentId is null))
+                                {
+                                    <option value="@parentCategory.Id">@parentCategory.Name</option>
+                                }
+                            </select>
+                            @if (categoriesMenu.CanInsert)
+                            {
+                                <button class="item-delete-button" id="addSubcategoryButton" type="button" disabled>Add subcategory</button>
+                            }
+                        </div>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="data-table full-table">
+                            <thead><tr><th>Image</th><th>Name</th><th>Details</th><th>Status</th>@if (categoriesMenu.CanUpdate || categoriesMenu.CanDelete) { <th>Actions</th> }</tr></thead>
+                            <tbody id="categoryTableBody" data-can-update="@categoriesMenu.CanUpdate.ToString().ToLowerInvariant()" data-can-delete="@categoriesMenu.CanDelete.ToString().ToLowerInvariant()" data-update-url="@Url.Action("UpdateCategory", "Catalog")" data-delete-url="@Url.Action("DeleteCategory", "Catalog")">
+                                @if (Model.Categories.Count == 0)
+                                {
+                                    <tr><td colspan="@(categoriesMenu.CanUpdate || categoriesMenu.CanDelete ? 5 : 4)">No categories have been added yet.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var category in Model.Categories)
+                                    {
+                                        <tr data-category-row="@category.Id" data-parent-id="@category.ParentId">
+                                            <td>
+                                                @if (!string.IsNullOrWhiteSpace(category.ImageUrl))
+                                                {
+                                                    <img class="category-image" src="@category.ImageUrl" alt="@category.Name" loading="lazy" />
+                                                }
+                                                else
+                                                {
+                                                    <span class="category-image-placeholder" aria-hidden="true">◈</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @category.Name
+                                                @if (category.ParentName is not null)
+                                                {
+                                                    <small class="category-parent-label">Subcategory of @category.ParentName</small>
+                                                }
+                                            </td>
+                                            <td>@category.Details</td>
                                             <td><span class="status-pill @(category.IsActive ? "status-ready" : "status-served")">@(category.IsActive ? "Active" : "Inactive")</span></td>
+                                            @if (categoriesMenu.CanUpdate || categoriesMenu.CanDelete)
+                                            {
+                                                <td class="category-actions">
+                                                    @if (categoriesMenu.CanUpdate)
+                                                    {
+                                                        <button class="item-delete-button" type="button" data-category-edit data-id="@category.Id" data-name="@category.Name" data-details="@category.Details" data-parent-id="@category.ParentId">Edit</button>
+                                                    }
+                                                    @if (categoriesMenu.CanDelete)
+                                                    {
+                                                        <button class="item-delete-button" type="button" data-category-delete data-id="@category.Id" data-name="@category.Name">Delete</button>
+                                                    }
+                                                </td>
+                                            }
                                         </tr>
                                     }
                                 }
@@ -232,6 +324,38 @@
         </main>
     </div>
 
+    @if (categoriesMenu?.CanInsert == true || categoriesMenu?.CanUpdate == true || categoriesMenu?.CanDelete == true)
+    {
+    <dialog class="order-dialog" id="categoryDialog">
+        <form id="categoryForm" action="@Url.Action("CreateCategory", "Catalog")" data-create-action="@Url.Action("CreateCategory", "Catalog")" method="post" enctype="multipart/form-data">
+            @Html.AntiForgeryToken()
+            <div class="dialog-heading"><div><span class="eyebrow">CATALOG</span><h2 id="categoryDialogTitle">Add a category</h2></div><button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button></div>
+            <label>Category name<input name="Name" required maxlength="200" placeholder="e.g. Main course" /></label>
+            <label>Details<textarea name="Details" required maxlength="1000" rows="3" placeholder="Describe this category"></textarea></label>
+            <label>Parent category
+                <select name="ParentId" id="categoryParentId" class="form-select">
+                    <option value="">Main category</option>
+                    @foreach (var parentCategory in Model.Categories.Where(category => category.ParentId is null))
+                    {
+                        <option value="@parentCategory.Id">@parentCategory.Name</option>
+                    }
+                </select>
+            </label>
+            <label>Category image<input name="Image" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" /></label>
+            <input name="RemoveImage" id="categoryRemoveImage" type="hidden" value="false" />
+            <div class="category-image-current" id="categoryCurrentImage" hidden>
+                <img class="category-image-preview" id="categoryImagePreview" alt="Current category image" />
+                <div class="category-image-controls">
+                    <a class="item-delete-button" id="categoryImageDownload" href="#" download>Download</a>
+                    <button class="item-delete-button" id="categoryImageRemove" type="button">Remove image</button>
+                </div>
+            </div>
+            <p class="category-image-note" id="categoryImageNote" hidden>Choose an image only if you want to replace the current one. Subcategories can be saved without an image.</p>
+            <button class="primary-button dialog-submit" id="categorySubmitButton" type="submit">Create category</button>
+        </form>
+    </dialog>
+    }
+
     @if (ordersMenu?.CanInsert == true)
     {
     <dialog class="order-dialog" id="orderDialog">
@@ -243,14 +367,41 @@
         </form>
     </dialog>
     }
-    @if (dishesMenu?.CanInsert == true)
+    @if (dishesMenu?.CanInsert == true || dishesMenu?.CanUpdate == true || dishesMenu?.CanDelete == true)
     {
     <dialog class="order-dialog" id="menuDialog">
-        <form id="menuForm" method="dialog">
+        <form id="menuForm" action="@Url.Action("CreateDish", "Catalog")" data-create-action="@Url.Action("CreateDish", "Catalog")" method="post">
+            @Html.AntiForgeryToken()
             <div class="dialog-heading"><div><span class="eyebrow">MENU BUILDER</span><h2>Add a dish</h2></div><button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button></div>
-            <label>Dish name<input name="name" required maxlength="50" placeholder="e.g. Saffron rice bowl" /></label>
-            <div class="dialog-fields"><label>Category<input name="category" required maxlength="30" placeholder="e.g. Main course" /></label><label>Price ($)<input name="price" required type="number" min="0.5" step="0.01" placeholder="9.50" /></label></div>
-            <button class="primary-button dialog-submit" type="submit">Add to menu</button>
+            <label>Dish name<input name="Name" required maxlength="200" placeholder="e.g. Grilled sandwich" /></label>
+            <label>Category
+                <select name="CategoryId" required class="form-select">
+                    <option value="">Choose a category</option>
+                    @foreach (var category in Model.Categories)
+                    {
+                        <option value="@category.Id">@(category.ParentName is null ? category.Name : $"{category.ParentName} · {category.Name}")</option>
+                    }
+                </select>
+            </label>
+            <div class="dialog-fields">
+                <label>Price<input name="Price" required type="number" min="0.01" max="99999999.99" step="0.01" placeholder="9.50" /></label>
+                <label>Old price<input name="OldPrice" type="number" min="0.01" max="99999999.99" step="0.01" placeholder="Optional" /></label>
+            </div>
+            <label>Description<textarea name="Description" maxlength="2000" rows="3" placeholder="Describe the dish"></textarea></label>
+            <label>Dish image<input name="Image" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" required /></label>
+            <input name="RemoveImage" id="dishRemoveImage" type="hidden" value="false" />
+            <div class="category-image-current" id="dishCurrentImage" hidden>
+                <img class="category-image-preview" id="dishImagePreview" alt="Current dish image" />
+                <div class="category-image-controls">
+                    <a class="item-delete-button" id="dishImageDownload" href="#" download>Download</a>
+                    <button class="item-delete-button" id="dishImageRemove" type="button">Remove image</button>
+                </div>
+            </div>
+            <div class="dish-form-flags">
+                <label><input name="IsNew" type="checkbox" value="true" /> New dish</label>
+                <label><input name="IsActive" type="checkbox" value="true" checked /> Active</label>
+            </div>
+            <button class="primary-button dialog-submit" id="dishSubmitButton" type="submit">Add dish</button>
         </form>
     </dialog>
     }

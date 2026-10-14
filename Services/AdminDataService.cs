@@ -116,10 +116,16 @@ public sealed class AdminDataService : IAdminDataService
 
     public async Task<IReadOnlyList<MenuCategory>> GetCategoriesAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureCategoryDetailsColumnAsync(cancellationToken);
+
         const string sql = """
-            SELECT Id, Name, Img, IsActive
-            FROM dbo.Category
-            ORDER BY Name, Id;
+            SELECT category.Id, category.ParentId, parent.Name, category.Name,
+                   category.Details, category.Img, category.IsActive
+            FROM dbo.Category AS category
+            LEFT JOIN dbo.Category AS parent ON parent.Id = category.ParentId
+            ORDER BY CASE WHEN category.ParentId IS NULL THEN category.Id ELSE category.ParentId END,
+                     CASE WHEN category.ParentId IS NULL THEN 0 ELSE 1 END,
+                     category.Name, category.Id;
             """;
 
         var categories = new List<MenuCategory>();
@@ -132,13 +138,354 @@ public sealed class AdminDataService : IAdminDataService
             categories.Add(new MenuCategory
             {
                 Id = reader.GetInt32(0),
-                Name = reader.GetString(1),
-                Img = reader.IsDBNull(2) ? null : reader.GetString(2),
-                IsActive = reader.GetBoolean(3)
+                ParentId = reader.IsDBNull(1) ? null : reader.GetInt32(1),
+                ParentName = reader.IsDBNull(2) ? null : reader.GetString(2),
+                Name = reader.GetString(3),
+                Details = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+                Img = reader.IsDBNull(5) ? null : reader.GetString(5),
+                IsActive = reader.GetBoolean(6)
             });
         }
 
         return categories;
+    }
+
+    public async Task<IReadOnlyList<Dish>> GetDishesAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureDishTableAsync(cancellationToken);
+
+        const string sql = """
+            SELECT dish.Id, dish.Name, dish.Price, dish.OldPrice, dish.Description,
+                   dish.CategoryId, category.Name, parent.Name, dish.Img, dish.IsNew, dish.IsActive
+            FROM dbo.Dish AS dish
+            INNER JOIN dbo.Category AS category ON category.Id = dish.CategoryId
+            LEFT JOIN dbo.Category AS parent ON parent.Id = category.ParentId
+            ORDER BY dish.Name, dish.Id;
+            """;
+
+        var dishes = new List<Dish>();
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            dishes.Add(ReadDish(reader));
+        }
+
+        return dishes;
+    }
+
+    public async Task<Dish> CreateDishAsync(
+        DishUpsertRequest request,
+        string name,
+        string? imagePublicId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureDishTableAsync(cancellationToken);
+
+        const string sql = """
+            INSERT INTO dbo.Dish (Name, Price, OldPrice, Description, CategoryId, Img, IsNew, IsActive)
+            OUTPUT INSERTED.Id
+            VALUES (@Name, @Price, @OldPrice, @Description, @CategoryId, @Img, @IsNew, @IsActive);
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Transaction = transaction;
+        AddDishParameters(command, request, name, imagePublicId);
+        var id = (int)(await command.ExecuteScalarAsync(cancellationToken)
+            ?? throw new InvalidOperationException("The dish insert did not return an ID."));
+
+        var dish = await GetDishByIdAsync(id, connection, transaction, cancellationToken)
+            ?? throw new InvalidOperationException("The saved dish could not be read back.");
+        await transaction.CommitAsync(cancellationToken);
+        return dish;
+    }
+
+    public async Task<DishUpdateResult?> UpdateDishAsync(
+        int id,
+        DishUpsertRequest request,
+        string name,
+        string? imagePublicId,
+        bool removeImage,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureDishTableAsync(cancellationToken);
+
+        const string sql = """
+            UPDATE dbo.Dish
+            SET Name = @Name,
+                Price = @Price,
+                OldPrice = @OldPrice,
+                Description = @Description,
+                CategoryId = @CategoryId,
+                Img = CASE WHEN @RemoveImage = 1 THEN NULL WHEN @Img IS NOT NULL THEN @Img ELSE Img END,
+                IsNew = @IsNew,
+                IsActive = @IsActive
+            OUTPUT DELETED.Img
+            WHERE Id = @Id;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("@Id", id);
+        AddDishParameters(command, request, name, imagePublicId);
+        command.Parameters.AddWithValue("@RemoveImage", removeImage);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var previousImagePublicId = reader.IsDBNull(0) ? null : reader.GetString(0);
+        await reader.DisposeAsync();
+        var dish = await GetDishByIdAsync(id, connection, transaction, cancellationToken);
+        if (dish is null)
+        {
+            return null;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new DishUpdateResult(dish, previousImagePublicId);
+    }
+
+    public async Task<DishDeleteResult> DeleteDishAsync(int id, CancellationToken cancellationToken = default)
+    {
+        await EnsureDishTableAsync(cancellationToken);
+
+        const string sql = "DELETE FROM dbo.Dish OUTPUT DELETED.Img WHERE Id = @Id;";
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@Id", id);
+        var imagePublicId = await command.ExecuteScalarAsync(cancellationToken);
+        return imagePublicId is null
+            ? new DishDeleteResult(false, null)
+            : new DishDeleteResult(true, imagePublicId is DBNull ? null : (string)imagePublicId);
+    }
+
+    private static async Task<Dish?> GetDishByIdAsync(
+        int id,
+        SqlConnection connection,
+        SqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT dish.Id, dish.Name, dish.Price, dish.OldPrice, dish.Description,
+                   dish.CategoryId, category.Name, parent.Name, dish.Img, dish.IsNew, dish.IsActive
+            FROM dbo.Dish AS dish
+            INNER JOIN dbo.Category AS category ON category.Id = dish.CategoryId
+            LEFT JOIN dbo.Category AS parent ON parent.Id = category.ParentId
+            WHERE dish.Id = @Id;
+            """;
+
+        await using var command = new SqlCommand(sql, connection);
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("@Id", id);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadDish(reader) : null;
+    }
+
+    private static Dish ReadDish(SqlDataReader reader)
+    {
+        return new Dish
+        {
+            Id = reader.GetInt32(0),
+            Name = reader.GetString(1),
+            Price = reader.GetDecimal(2),
+            OldPrice = reader.IsDBNull(3) ? null : reader.GetDecimal(3),
+            Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+            CategoryId = reader.GetInt32(5),
+            CategoryName = reader.GetString(6),
+            ParentCategoryName = reader.IsDBNull(7) ? null : reader.GetString(7),
+            Img = reader.IsDBNull(8) ? null : reader.GetString(8),
+            IsNew = reader.GetBoolean(9),
+            IsActive = reader.GetBoolean(10)
+        };
+    }
+
+    private static void AddDishParameters(SqlCommand command, DishUpsertRequest request, string name, string? imagePublicId)
+    {
+        command.Parameters.AddWithValue("@Name", name);
+        command.Parameters.AddWithValue("@Price", request.Price);
+        command.Parameters.AddWithValue("@OldPrice", (object?)request.OldPrice ?? DBNull.Value);
+        command.Parameters.AddWithValue("@Description", request.Description.Trim());
+        command.Parameters.AddWithValue("@CategoryId", request.CategoryId);
+        command.Parameters.AddWithValue("@Img", (object?)imagePublicId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@IsNew", request.IsNew);
+        command.Parameters.AddWithValue("@IsActive", request.IsActive);
+    }
+
+    private async Task EnsureDishTableAsync(CancellationToken cancellationToken)
+    {
+        const string sql = """
+            IF OBJECT_ID(N'dbo.Dish', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.Dish
+                (
+                    Id int IDENTITY(1, 1) NOT NULL CONSTRAINT PK_Dish PRIMARY KEY,
+                    Name nvarchar(200) NOT NULL,
+                    Price decimal(10, 2) NOT NULL,
+                    OldPrice decimal(10, 2) NULL,
+                    Description nvarchar(2000) NOT NULL CONSTRAINT DF_Dish_Description DEFAULT (N''),
+                    CategoryId int NOT NULL,
+                    Img nvarchar(500) NULL,
+                    IsNew bit NOT NULL CONSTRAINT DF_Dish_IsNew DEFAULT (0),
+                    IsActive bit NOT NULL CONSTRAINT DF_Dish_IsActive DEFAULT (1),
+                    CONSTRAINT FK_Dish_Category FOREIGN KEY (CategoryId) REFERENCES dbo.Category (Id)
+                );
+            END;
+            IF COL_LENGTH(N'dbo.Dish', N'Img') IS NULL
+            BEGIN
+                ALTER TABLE dbo.Dish ADD Img nvarchar(500) NULL;
+            END;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<MenuCategory> CreateCategoryAsync(
+        string name,
+        string details,
+        string? imagePublicId,
+        int? parentId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureCategoryDetailsColumnAsync(cancellationToken);
+
+        const string sql = """
+            INSERT INTO dbo.Category (ParentId, Name, Details, Img)
+            OUTPUT INSERTED.Id
+            VALUES (@ParentId, @Name, @Details, @Img);
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@ParentId", (object?)parentId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@Name", name);
+        command.Parameters.AddWithValue("@Details", details);
+        command.Parameters.AddWithValue("@Img", (object?)imagePublicId ?? DBNull.Value);
+        var id = (int)(await command.ExecuteScalarAsync(cancellationToken)
+            ?? throw new InvalidOperationException("The category insert did not return an ID."));
+
+        return new MenuCategory
+        {
+            Id = id,
+            ParentId = parentId,
+            Name = name,
+            Details = details,
+            Img = imagePublicId,
+            IsActive = true
+        };
+    }
+
+    public async Task<CategoryUpdateResult?> UpdateCategoryAsync(
+        int id,
+        string name,
+        string details,
+        string? imagePublicId,
+        bool removeImage,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureCategoryDetailsColumnAsync(cancellationToken);
+
+        const string sql = """
+            UPDATE dbo.Category
+            SET Name = @Name,
+                Details = @Details,
+                Img = CASE
+                    WHEN @RemoveImage = 1 THEN NULL
+                    WHEN @Img IS NOT NULL THEN @Img
+                    ELSE Img
+                END
+            OUTPUT INSERTED.Id, INSERTED.ParentId, INSERTED.Name, INSERTED.Details,
+                   INSERTED.Img, INSERTED.IsActive, DELETED.Img
+            WHERE Id = @Id;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@Id", id);
+        command.Parameters.AddWithValue("@Name", name);
+        command.Parameters.AddWithValue("@Details", details);
+        command.Parameters.AddWithValue("@Img", (object?)imagePublicId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@RemoveImage", removeImage);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var category = new MenuCategory
+        {
+            Id = reader.GetInt32(0),
+            ParentId = reader.IsDBNull(1) ? null : reader.GetInt32(1),
+            Name = reader.GetString(2),
+            Details = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+            Img = reader.IsDBNull(4) ? null : reader.GetString(4),
+            IsActive = reader.GetBoolean(5)
+        };
+        return new CategoryUpdateResult(category, reader.IsDBNull(6) ? null : reader.GetString(6));
+    }
+
+    public async Task<CategoryDeleteResult> DeleteCategoryAsync(int id, CancellationToken cancellationToken = default)
+    {
+        await EnsureDishTableAsync(cancellationToken);
+
+        const string hasDishesSql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Dish WHERE CategoryId = @Id) THEN 1 ELSE 0 END;";
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var hasDishesCommand = new SqlCommand(hasDishesSql, connection);
+        hasDishesCommand.Parameters.AddWithValue("@Id", id);
+        if ((int)(await hasDishesCommand.ExecuteScalarAsync(cancellationToken) ?? 0) == 1)
+        {
+            return new CategoryDeleteResult(false, null, true);
+        }
+
+        const string sql = """
+            DELETE FROM dbo.Category
+            OUTPUT DELETED.Img
+            WHERE Id = @Id;
+            """;
+
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@Id", id);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new CategoryDeleteResult(false, null);
+        }
+
+        return new CategoryDeleteResult(true, reader.IsDBNull(0) ? null : reader.GetString(0));
+    }
+
+    private async Task EnsureCategoryDetailsColumnAsync(CancellationToken cancellationToken)
+    {
+        const string sql = """
+            IF COL_LENGTH(N'dbo.Category', N'Details') IS NULL
+            BEGIN
+                ALTER TABLE dbo.Category
+                    ADD Details nvarchar(1000) NOT NULL
+                        CONSTRAINT DF_Category_Details_Runtime DEFAULT (N'');
+            END;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<bool> HasMenuPermissionAsync(

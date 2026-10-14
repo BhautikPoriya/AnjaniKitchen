@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 builder.Services.AddScoped<IAdminDataService, AdminDataService>();
+builder.Services.AddSingleton<ICategoryImageStorage, CloudinaryCategoryImageStorage>();
 builder.Services.AddSingleton<IPasswordHasher<AdminUser>, PasswordHasher<AdminUser>>();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>

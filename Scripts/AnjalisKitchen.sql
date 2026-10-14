@@ -28,9 +28,42 @@ BEGIN
     (
         Id int IDENTITY(1, 1) NOT NULL CONSTRAINT PK_Category PRIMARY KEY,
         Name nvarchar(200) NOT NULL,
+        Details nvarchar(1000) NOT NULL CONSTRAINT DF_Category_Details DEFAULT (N''),
         Img nvarchar(200) NULL,
+        ParentId int NULL,
         IsActive bit NOT NULL CONSTRAINT DF_Category_IsActive DEFAULT (1)
     );
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Category', N'Details') IS NULL
+BEGIN
+    ALTER TABLE dbo.Category
+        ADD Details nvarchar(1000) NOT NULL CONSTRAINT DF_Category_Details DEFAULT (N'');
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Dish', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Dish
+    (
+        Id int IDENTITY(1, 1) NOT NULL CONSTRAINT PK_Dish PRIMARY KEY,
+        Name nvarchar(200) NOT NULL,
+        Price decimal(10, 2) NOT NULL,
+        OldPrice decimal(10, 2) NULL,
+        Description nvarchar(2000) NOT NULL CONSTRAINT DF_Dish_Description DEFAULT (N''),
+        CategoryId int NOT NULL,
+        Img nvarchar(500) NULL,
+        IsNew bit NOT NULL CONSTRAINT DF_Dish_IsNew DEFAULT (0),
+        IsActive bit NOT NULL CONSTRAINT DF_Dish_IsActive DEFAULT (1),
+        CONSTRAINT FK_Dish_Category FOREIGN KEY (CategoryId) REFERENCES dbo.Category (Id)
+    );
+END;
+GO
+
+IF COL_LENGTH(N'dbo.Dish', N'Img') IS NULL
+BEGIN
+    ALTER TABLE dbo.Dish ADD Img nvarchar(500) NULL;
 END;
 GO
 
