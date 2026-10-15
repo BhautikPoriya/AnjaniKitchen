@@ -249,6 +249,8 @@ button.status-pill { cursor: pointer; }
 .table-filter { min-width: 125px; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; outline: 0; background: white; color: #686a76; font-size: 11px; }
 .full-table thead th { padding: 13px 12px; font-size: 18px; }
 .full-table tbody td { padding: 15px 12px; font-size: 16px; }
+.full-table .availability-toggle { margin-left: 0; }
+.full-table .availability-toggle small { display: none; }
 .table-person { display: inline-flex; align-items: center; gap: 9px; color: var(--ink); }
 .person-avatar { display: inline-grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border-radius: 50%; font-size: 9px; font-style: normal; font-weight: 700; }
 .person-avatar.peach { background: #f9e9df; color: #a7674c; }

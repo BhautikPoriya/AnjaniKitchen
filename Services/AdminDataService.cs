@@ -270,6 +270,29 @@ public sealed class AdminDataService : IAdminDataService
             : new DishDeleteResult(true, imagePublicId is DBNull ? null : (string)imagePublicId);
     }
 
+    public async Task<bool?> UpdateDishStatusAsync(
+        int id,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureDishTableAsync(cancellationToken);
+
+        const string sql = """
+            UPDATE dbo.Dish
+            SET IsActive = @IsActive
+            OUTPUT INSERTED.IsActive
+            WHERE Id = @Id;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@Id", id);
+        command.Parameters.AddWithValue("@IsActive", isActive);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null ? null : (bool)result;
+    }
+
     private static async Task<Dish?> GetDishByIdAsync(
         int id,
         SqlConnection connection,
@@ -469,6 +492,29 @@ public sealed class AdminDataService : IAdminDataService
         }
 
         return new CategoryDeleteResult(true, reader.IsDBNull(0) ? null : reader.GetString(0));
+    }
+
+    public async Task<bool?> UpdateCategoryStatusAsync(
+        int id,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureCategoryDetailsColumnAsync(cancellationToken);
+
+        const string sql = """
+            UPDATE dbo.Category
+            SET IsActive = @IsActive
+            OUTPUT INSERTED.IsActive
+            WHERE Id = @Id;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@Id", id);
+        command.Parameters.AddWithValue("@IsActive", isActive);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null ? null : (bool)result;
     }
 
     private async Task EnsureCategoryDetailsColumnAsync(CancellationToken cancellationToken)

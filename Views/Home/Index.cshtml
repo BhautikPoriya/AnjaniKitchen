@@ -187,12 +187,13 @@
                     <div class="panel-heading"><div><h2>All dishes</h2><p id="dishSummary">@Model.Dishes.Count dishes configured.</p></div></div>
                     <div class="table-scroll">
                         <table class="data-table full-table">
-                            <thead><tr><th>Image</th><th>Dish</th><th>Category</th><th>Price</th><th>Old price</th><th>Description</th><th>New</th><th>Status</th>@if (dishesMenu.CanUpdate || dishesMenu.CanDelete) { <th>Actions</th> }</tr></thead>
+                            <thead><tr>@if (dishesMenu.CanUpdate || dishesMenu.CanDelete) { <th>Actions</th> }<th>Image</th><th>Dish</th><th>Category</th><th>Price</th><th>Old price</th><th>Description</th><th>New</th><th>Status</th></tr></thead>
                             <tbody id="dishTableBody"
                                    data-can-update="@dishesMenu.CanUpdate.ToString().ToLowerInvariant()"
                                    data-can-delete="@dishesMenu.CanDelete.ToString().ToLowerInvariant()"
                                    data-create-url="@Url.Action("CreateDish", "Catalog")"
                                    data-update-url="@Url.Action("UpdateDish", "Catalog")"
+                                   data-status-url="@Url.Action("UpdateDishStatus", "Catalog")"
                                    data-delete-url="@Url.Action("DeleteDish", "Catalog")">
                                 @if (Model.Dishes.Count == 0)
                                 {
@@ -203,6 +204,19 @@
                                     @foreach (var dish in Model.Dishes)
                                     {
                                         <tr data-dish-row="@dish.Id">
+                                            @if (dishesMenu.CanUpdate || dishesMenu.CanDelete)
+                                            {
+                                                <td class="category-actions">
+                                                    @if (dishesMenu.CanUpdate)
+                                                    {
+                                                        <button class="item-delete-button" type="button" data-dish-edit data-id="@dish.Id" data-name="@dish.Name" data-price="@dish.Price" data-old-price="@dish.OldPrice" data-description="@dish.Description" data-category-id="@dish.CategoryId" data-image-url="@dish.ImageUrl" data-is-new="@dish.IsNew.ToString().ToLowerInvariant()" data-is-active="@dish.IsActive.ToString().ToLowerInvariant()">Edit</button>
+                                                    }
+                                                    @if (dishesMenu.CanDelete)
+                                                    {
+                                                        <button class="item-delete-button" type="button" data-dish-delete data-id="@dish.Id" data-name="@dish.Name">Delete</button>
+                                                    }
+                                                </td>
+                                            }
                                             <td>
                                                 @if (!string.IsNullOrWhiteSpace(dish.ImageUrl))
                                                 {
@@ -219,20 +233,22 @@
                                             <td>@(dish.OldPrice?.ToString("0.00") ?? "—")</td>
                                             <td>@dish.Description</td>
                                             <td>@(dish.IsNew ? "Yes" : "—")</td>
-                                            <td><span class="status-pill @(dish.IsActive ? "status-ready" : "status-served")">@(dish.IsActive ? "Active" : "Inactive")</span></td>
-                                            @if (dishesMenu.CanUpdate || dishesMenu.CanDelete)
-                                            {
-                                                <td class="category-actions">
-                                                    @if (dishesMenu.CanUpdate)
-                                                    {
-                                                        <button class="item-delete-button" type="button" data-dish-edit data-id="@dish.Id" data-name="@dish.Name" data-price="@dish.Price" data-old-price="@dish.OldPrice" data-description="@dish.Description" data-category-id="@dish.CategoryId" data-image-url="@dish.ImageUrl" data-is-new="@dish.IsNew.ToString().ToLowerInvariant()" data-is-active="@dish.IsActive.ToString().ToLowerInvariant()">Edit</button>
-                                                    }
-                                                    @if (dishesMenu.CanDelete)
-                                                    {
-                                                        <button class="item-delete-button" type="button" data-dish-delete data-id="@dish.Id" data-name="@dish.Name">Delete</button>
-                                                    }
-                                                </td>
-                                            }
+                                            <td>
+                                                @if (dishesMenu.CanUpdate)
+                                                {
+                                                    <label class="availability-toggle">
+                                                        <input type="checkbox" data-dish-status data-id="@dish.Id" data-name="@dish.Name" aria-label="@(dish.IsActive ? "Deactivate" : "Activate") @dish.Name" checked="@dish.IsActive" />
+                                                        <span aria-hidden="true"></span><small>@(dish.IsActive ? "Active" : "Inactive")</small>
+                                                    </label>
+                                                }
+                                                else
+                                                {
+                                                    <label class="availability-toggle">
+                                                        <input type="checkbox" disabled aria-label="@(dish.IsActive ? "Active" : "Inactive"): @dish.Name" checked="@dish.IsActive" />
+                                                        <span aria-hidden="true"></span>
+                                                    </label>
+                                                }
+                                            </td>
                                         </tr>
                                     }
                                 }
@@ -267,8 +283,8 @@
                     </div>
                     <div class="table-scroll">
                         <table class="data-table full-table">
-                            <thead><tr><th>Image</th><th>Name</th><th>Details</th><th>Status</th>@if (categoriesMenu.CanUpdate || categoriesMenu.CanDelete) { <th>Actions</th> }</tr></thead>
-                            <tbody id="categoryTableBody" data-can-update="@categoriesMenu.CanUpdate.ToString().ToLowerInvariant()" data-can-delete="@categoriesMenu.CanDelete.ToString().ToLowerInvariant()" data-update-url="@Url.Action("UpdateCategory", "Catalog")" data-delete-url="@Url.Action("DeleteCategory", "Catalog")">
+                            <thead><tr>@if (categoriesMenu.CanUpdate || categoriesMenu.CanDelete) { <th>Actions</th> }<th>Image</th><th>Name</th><th>Details</th><th>Status</th></tr></thead>
+                            <tbody id="categoryTableBody" data-can-update="@categoriesMenu.CanUpdate.ToString().ToLowerInvariant()" data-can-delete="@categoriesMenu.CanDelete.ToString().ToLowerInvariant()" data-update-url="@Url.Action("UpdateCategory", "Catalog")" data-status-url="@Url.Action("UpdateCategoryStatus", "Catalog")" data-delete-url="@Url.Action("DeleteCategory", "Catalog")">
                                 @if (Model.Categories.Count == 0)
                                 {
                                     <tr><td colspan="@(categoriesMenu.CanUpdate || categoriesMenu.CanDelete ? 5 : 4)">No categories have been added yet.</td></tr>
@@ -278,6 +294,19 @@
                                     @foreach (var category in Model.Categories)
                                     {
                                         <tr data-category-row="@category.Id" data-parent-id="@category.ParentId">
+                                            @if (categoriesMenu.CanUpdate || categoriesMenu.CanDelete)
+                                            {
+                                                <td class="category-actions">
+                                                    @if (categoriesMenu.CanUpdate)
+                                                    {
+                                                        <button class="item-delete-button" type="button" data-category-edit data-id="@category.Id" data-name="@category.Name" data-details="@category.Details" data-parent-id="@category.ParentId">Edit</button>
+                                                    }
+                                                    @if (categoriesMenu.CanDelete)
+                                                    {
+                                                        <button class="item-delete-button" type="button" data-category-delete data-id="@category.Id" data-name="@category.Name">Delete</button>
+                                                    }
+                                                </td>
+                                            }
                                             <td>
                                                 @if (!string.IsNullOrWhiteSpace(category.ImageUrl))
                                                 {
@@ -296,20 +325,21 @@
                                                 }
                                             </td>
                                             <td>@category.Details</td>
-                                            <td><span class="status-pill @(category.IsActive ? "status-ready" : "status-served")">@(category.IsActive ? "Active" : "Inactive")</span></td>
-                                            @if (categoriesMenu.CanUpdate || categoriesMenu.CanDelete)
-                                            {
-                                                <td class="category-actions">
-                                                    @if (categoriesMenu.CanUpdate)
-                                                    {
-                                                        <button class="item-delete-button" type="button" data-category-edit data-id="@category.Id" data-name="@category.Name" data-details="@category.Details" data-parent-id="@category.ParentId">Edit</button>
-                                                    }
-                                                    @if (categoriesMenu.CanDelete)
-                                                    {
-                                                        <button class="item-delete-button" type="button" data-category-delete data-id="@category.Id" data-name="@category.Name">Delete</button>
-                                                    }
-                                                </td>
-                                            }
+                                            <td>
+                                                @if (categoriesMenu.CanUpdate)
+                                                {
+                                                    <label class="availability-toggle">
+                                                        <input type="checkbox" data-category-status data-id="@category.Id" data-name="@category.Name" aria-label="@(category.IsActive ? "Deactivate" : "Activate") @category.Name" checked="@category.IsActive" />
+                                                        <span aria-hidden="true"></span>
+                                                    </label>
+                                                }
+                                                else
+                                                {
+                                                    <label class="availability-toggle">
+                                                        <input type="checkbox" disabled aria-label="@(category.IsActive ? "Active" : "Inactive"): @category.Name" checked="@category.IsActive" />
+                                                        <span aria-hidden="true"></span>
+                                                    </label>
+                                                }
                                         </tr>
                                     }
                                 }

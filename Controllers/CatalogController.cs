@@ -7,15 +7,18 @@ namespace AnjaniKitchen.Controllers;
 public sealed class CatalogController : Controller
 {
     private readonly IAdminDataService _adminDataService;
+    private readonly ISupabaseCatalogService _supabaseCatalogService;
     private readonly ICategoryImageStorage _categoryImageStorage;
     private readonly ILogger<CatalogController> _logger;
 
     public CatalogController(
         IAdminDataService adminDataService,
+        ISupabaseCatalogService supabaseCatalogService,
         ICategoryImageStorage categoryImageStorage,
         ILogger<CatalogController> logger)
     {
         _adminDataService = adminDataService;
+        _supabaseCatalogService = supabaseCatalogService;
         _categoryImageStorage = categoryImageStorage;
         _logger = logger;
     }
@@ -87,9 +90,10 @@ public sealed class CatalogController : Controller
             return BadRequest(new { error = "Category name and details cannot be empty." });
         }
 
+        IReadOnlyList<MenuCategory> categories = Array.Empty<MenuCategory>();
         if (request.ParentId is not null)
         {
-            var categories = await _adminDataService.GetCategoriesAsync(cancellationToken);
+            categories = await _adminDataService.GetCategoriesAsync(cancellationToken);
             if (!categories.Any(category => category.Id == request.ParentId && category.ParentId is null))
             {
                 return BadRequest(new { error = "Choose a valid parent category for the subcategory." });
@@ -142,6 +146,17 @@ public sealed class CatalogController : Controller
         }
 
         category.ImageUrl = _categoryImageStorage.GetImageUrl(category.Img);
+        string? parentSyncWarning = null;
+        if (category.ParentId is int parentId)
+        {
+            var parent = categories.FirstOrDefault(item => item.Id == parentId);
+            if (parent is not null)
+            {
+                parent.ImageUrl = _categoryImageStorage.GetImageUrl(parent.Img);
+                parentSyncWarning = await SyncCategoryToSupabaseAsync(parent, "sync parent for", cancellationToken);
+            }
+        }
+        var supabaseWarning = await SyncCategoryToSupabaseAsync(category, "create", cancellationToken);
         return CreatedAtAction(nameof(Categories), new { id = category.Id }, new
         {
             category.Id,
@@ -149,7 +164,8 @@ public sealed class CatalogController : Controller
             category.Name,
             category.Details,
             category.ImageUrl,
-            category.IsActive
+            category.IsActive,
+            warning = CombineWarnings(parentSyncWarning, supabaseWarning)
         });
     }
 
@@ -243,6 +259,7 @@ public sealed class CatalogController : Controller
         var imageCleanupWarning = imageWasChanged && !string.IsNullOrWhiteSpace(update.PreviousImagePublicId)
             ? await TryDeleteCloudinaryImageAsync(update.PreviousImagePublicId)
             : null;
+        var supabaseWarning = await SyncCategoryToSupabaseAsync(update.Category, "update", cancellationToken);
 
         return Ok(new
         {
@@ -252,7 +269,7 @@ public sealed class CatalogController : Controller
             update.Category.Details,
             update.Category.ImageUrl,
             update.Category.IsActive,
-            warning = imageCleanupWarning
+            warning = CombineWarnings(imageCleanupWarning, supabaseWarning)
         });
     }
 
@@ -287,7 +304,43 @@ public sealed class CatalogController : Controller
         var warning = string.IsNullOrWhiteSpace(deletion.ImagePublicId)
             ? null
             : await TryDeleteCloudinaryImageAsync(deletion.ImagePublicId);
-        return Ok(new { deleted = true, warning });
+        var supabaseWarning = await DeleteCategoryFromSupabaseAsync(id, cancellationToken);
+        return Ok(new { deleted = true, warning = CombineWarnings(warning, supabaseWarning) });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateCategoryStatus(
+        int id,
+        [FromForm] bool isActive,
+        CancellationToken cancellationToken)
+    {
+        var userId = HttpContext.Session.GetInt32("KitchenAdminId");
+        var roleId = HttpContext.Session.GetInt32("KitchenRoleId");
+        if (userId is null || roleId is null)
+        {
+            return Unauthorized(new { error = "Please sign in again before updating a category." });
+        }
+
+        if (!await _adminDataService.HasMenuPermissionAsync(
+                userId.Value, roleId.Value, "Catalog", "categories", MenuPermission.Update, cancellationToken))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = "You do not have permission to update categories." });
+        }
+
+        if (id <= 0)
+        {
+            return BadRequest(new { error = "Choose a valid category." });
+        }
+
+        var updatedStatus = await _adminDataService.UpdateCategoryStatusAsync(id, isActive, cancellationToken);
+        if (updatedStatus is null)
+        {
+            return NotFound(new { error = "Category was not found." });
+        }
+
+        var supabaseWarning = await UpdateCategoryStatusInSupabaseAsync(id, updatedStatus.Value, cancellationToken);
+        return Ok(new { isActive = updatedStatus.Value, warning = supabaseWarning });
     }
 
     private static string? ValidateCategoryImage(IFormFile image)
@@ -463,6 +516,7 @@ public sealed class CatalogController : Controller
         }
 
         dish.ImageUrl = _categoryImageStorage.GetImageUrl(dish.Img);
+        var supabaseWarning = await SyncDishToSupabaseAsync(dish, categories, "create", cancellationToken);
         return CreatedAtAction(nameof(Dishes), new { id = dish.Id }, new
         {
             dish.Id,
@@ -475,7 +529,8 @@ public sealed class CatalogController : Controller
             dish.ParentCategoryName,
             dish.ImageUrl,
             dish.IsNew,
-            dish.IsActive
+            dish.IsActive,
+            warning = supabaseWarning
         });
     }
 
@@ -574,6 +629,7 @@ public sealed class CatalogController : Controller
             && !string.IsNullOrWhiteSpace(update.PreviousImagePublicId)
                 ? await TryDeleteCloudinaryImageAsync(update.PreviousImagePublicId)
                 : null;
+        var supabaseWarning = await SyncDishToSupabaseAsync(update.Dish, categories, "update", cancellationToken);
 
         return Ok(new
         {
@@ -588,8 +644,43 @@ public sealed class CatalogController : Controller
             update.Dish.ImageUrl,
             update.Dish.IsNew,
             update.Dish.IsActive,
-            warning = imageCleanupWarning
+            warning = CombineWarnings(imageCleanupWarning, supabaseWarning)
         });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateDishStatus(
+        int id,
+        [FromForm] bool isActive,
+        CancellationToken cancellationToken)
+    {
+        var userId = HttpContext.Session.GetInt32("KitchenAdminId");
+        var roleId = HttpContext.Session.GetInt32("KitchenRoleId");
+        if (userId is null || roleId is null)
+        {
+            return Unauthorized(new { error = "Please sign in again before updating a dish." });
+        }
+
+        if (!await _adminDataService.HasMenuPermissionAsync(
+                userId.Value, roleId.Value, "Catalog", "dishes", MenuPermission.Update, cancellationToken))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = "You do not have permission to update dishes." });
+        }
+
+        if (id <= 0)
+        {
+            return BadRequest(new { error = "Choose a valid dish." });
+        }
+
+        var updatedStatus = await _adminDataService.UpdateDishStatusAsync(id, isActive, cancellationToken);
+        if (updatedStatus is null)
+        {
+            return NotFound(new { error = "Dish was not found." });
+        }
+
+        var supabaseWarning = await SyncDishStatusToSupabaseAsync(id, updatedStatus.Value, cancellationToken);
+        return Ok(new { isActive = updatedStatus.Value, warning = supabaseWarning });
     }
 
     [HttpPost]
@@ -618,7 +709,142 @@ public sealed class CatalogController : Controller
         var warning = string.IsNullOrWhiteSpace(deletion.ImagePublicId)
             ? null
             : await TryDeleteCloudinaryImageAsync(deletion.ImagePublicId);
-        return Ok(new { deleted = true, warning });
+        var supabaseWarning = await DeleteDishFromSupabaseAsync(id, cancellationToken);
+        return Ok(new { deleted = true, warning = CombineWarnings(warning, supabaseWarning) });
+    }
+
+    private async Task<string?> DeleteCategoryFromSupabaseAsync(int id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _supabaseCatalogService.DeleteCategoryAsync(id, cancellationToken);
+            return null;
+        }
+        catch (Exception exception) when (IsSupabaseSyncException(exception))
+        {
+            _logger.LogError(exception, "Could not delete category {CategoryId} from Supabase.", id);
+            return "Deleted from the app database, but could not delete this category from Supabase. Check the Supabase connection and logs.";
+        }
+    }
+
+    private async Task<string?> DeleteDishFromSupabaseAsync(int id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _supabaseCatalogService.DeleteDishAsync(id, cancellationToken);
+            return null;
+        }
+        catch (Exception exception) when (IsSupabaseSyncException(exception))
+        {
+            _logger.LogError(exception, "Could not delete dish {DishId} from Supabase.", id);
+            return "Deleted from the app database, but could not delete this dish from Supabase. Check the Supabase connection and logs.";
+        }
+    }
+
+    private async Task<string?> SyncCategoryToSupabaseAsync(
+        MenuCategory category,
+        string operation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _supabaseCatalogService.UpsertCategoryAsync(category, cancellationToken);
+            return null;
+        }
+        catch (Exception exception) when (IsSupabaseSyncException(exception))
+        {
+            _logger.LogError(exception, "Could not {Operation} category {CategoryId} in Supabase.", operation, category.Id);
+            return "Saved in the app database, but could not sync this category to Supabase. Check the Supabase connection and logs.";
+        }
+    }
+
+    private async Task<string?> SyncDishToSupabaseAsync(
+        Dish dish,
+        IReadOnlyList<MenuCategory> categories,
+        string operation,
+        CancellationToken cancellationToken)
+    {
+        var warnings = new List<string?>();
+        var category = categories.FirstOrDefault(item => item.Id == dish.CategoryId);
+        if (category is null)
+        {
+            _logger.LogError("Could not sync dish {DishId}: category {CategoryId} was not found.", dish.Id, dish.CategoryId);
+            return "Saved in the app database, but its category could not be synced to Supabase.";
+        }
+
+        if (category.ParentId is int parentId)
+        {
+            var parent = categories.FirstOrDefault(item => item.Id == parentId);
+            if (parent is not null)
+            {
+                parent.ImageUrl = _categoryImageStorage.GetImageUrl(parent.Img);
+                warnings.Add(await SyncCategoryToSupabaseAsync(parent, "sync parent for dish", cancellationToken));
+            }
+        }
+
+        category.ImageUrl = _categoryImageStorage.GetImageUrl(category.Img);
+        warnings.Add(await SyncCategoryToSupabaseAsync(category, "sync category for dish", cancellationToken));
+
+        try
+        {
+            await _supabaseCatalogService.UpsertDishAsync(dish, cancellationToken);
+        }
+        catch (Exception exception) when (IsSupabaseSyncException(exception))
+        {
+            _logger.LogError(exception, "Could not {Operation} dish {DishId} in Supabase.", operation, dish.Id);
+            warnings.Add("Saved in the app database, but could not sync this dish to Supabase. Check the Supabase connection and logs.");
+        }
+
+        return CombineWarnings(warnings.ToArray());
+    }
+
+    private async Task<string?> SyncDishStatusToSupabaseAsync(
+        int id,
+        bool isActive,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _supabaseCatalogService.UpdateDishStatusAsync(id, isActive, cancellationToken);
+            return null;
+        }
+        catch (Exception exception) when (IsSupabaseSyncException(exception))
+        {
+            _logger.LogError(exception, "Could not update the status of dish {DishId} in Supabase.", id);
+            return "Dish status was saved in the app database, but could not be synced to Supabase. Check the Supabase connection and logs.";
+        }
+    }
+
+    private async Task<string?> UpdateCategoryStatusInSupabaseAsync(
+        int id,
+        bool isActive,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _supabaseCatalogService.UpdateCategoryStatusAsync(id, isActive, cancellationToken);
+            return null;
+        }
+        catch (Exception exception) when (IsSupabaseSyncException(exception))
+        {
+            _logger.LogError(exception, "Could not update the status of category {CategoryId} in Supabase.", id);
+            return "Category status was saved in the app database, but could not be synced to Supabase. Check the Supabase connection and logs.";
+        }
+    }
+
+    private static bool IsSupabaseSyncException(Exception exception)
+    {
+        return exception is Npgsql.NpgsqlException
+            or InvalidOperationException
+            or ArgumentException
+            or TimeoutException;
+    }
+
+    private static string? CombineWarnings(params string?[] warnings)
+    {
+        var messages = warnings.Where(warning => !string.IsNullOrWhiteSpace(warning));
+        var combined = string.Join(" ", messages);
+        return combined.Length == 0 ? null : combined;
     }
 
 }

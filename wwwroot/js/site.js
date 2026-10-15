@@ -276,7 +276,11 @@
 			: ""}${dishTableBody.dataset.canDelete === "true"
 			? `<button class="item-delete-button" type="button" data-dish-delete data-id="${dish.id}" data-name="${escapeHtml(dish.name)}">Delete</button>`
 			: ""}`;
+		const status = dishTableBody.dataset.canUpdate === "true"
+			? `<label class="availability-toggle"><input type="checkbox" data-dish-status data-id="${dish.id}" data-name="${escapeHtml(dish.name)}" aria-label="${dish.isActive ? "Deactivate" : "Activate"} ${escapeHtml(dish.name)}" ${dish.isActive ? "checked" : ""} /><span aria-hidden="true"></span></label>`
+			: `<label class="availability-toggle"><input type="checkbox" disabled aria-label="${dish.isActive ? "Active" : "Inactive"}: ${escapeHtml(dish.name)}" ${dish.isActive ? "checked" : ""} /><span aria-hidden="true"></span></label>`;
 		return `<tr data-dish-row="${dish.id}">
+			${actions ? `<td class="category-actions">${actions}</td>` : ""}
 			<td>${dish.imageUrl
 				? `<img class="dish-image" src="${escapeHtml(dish.imageUrl)}" alt="${escapeHtml(dish.name)}" loading="lazy" />`
 				: '<span class="category-image-placeholder" aria-hidden="true">◈</span>'}</td>
@@ -286,8 +290,7 @@
 			<td>${dish.oldPrice == null ? "—" : Number(dish.oldPrice).toFixed(2)}</td>
 			<td>${escapeHtml(dish.description || "")}</td>
 			<td>${dish.isNew ? "Yes" : "—"}</td>
-			<td><span class="status-pill ${dish.isActive ? "status-ready" : "status-served"}">${dish.isActive ? "Active" : "Inactive"}</span></td>
-			${actions ? `<td class="category-actions">${actions}</td>` : ""}
+			<td>${status}</td>
 		</tr>`;
 	}
 
@@ -358,6 +361,56 @@
 				: error.message || "Dish could not be saved.");
 		} finally {
 			dishSubmitButton.disabled = false;
+		}
+	});
+	document.addEventListener("change", async event => {
+		const toggle = event.target.closest("[data-dish-status], [data-category-status]");
+		if (!toggle) return;
+
+		const isDishStatus = toggle.hasAttribute("data-dish-status");
+		const tableBody = toggle.closest("#dishTableBody, #categoryTableBody");
+		const form = document.getElementById(isDishStatus ? "menuForm" : "categoryForm");
+		const isActive = toggle.checked;
+		const previousStatus = !isActive;
+		toggle.disabled = true;
+		toggle.setAttribute("aria-busy", "true");
+
+		try {
+			const data = new FormData();
+			data.append("__RequestVerificationToken", form.querySelector('[name="__RequestVerificationToken"]').value);
+			data.append("isActive", String(isActive));
+			const response = await fetch(`${tableBody.dataset.statusUrl}/${encodeURIComponent(toggle.dataset.id)}`, {
+				method: "POST",
+				body: data
+			});
+			const responseText = await response.text();
+			let result;
+			try {
+				result = JSON.parse(responseText);
+			} catch {
+				const itemType = isDishStatus ? "Dish" : "Category";
+				throw new Error(response.ok
+					? `The server returned an invalid response while updating ${itemType.toLowerCase()} status.`
+					: `${itemType} status could not be updated (HTTP ${response.status}).`);
+			}
+			const itemType = isDishStatus ? "Dish" : "Category";
+			if (!response.ok) throw new Error(result.error || `${itemType} status could not be updated.`);
+
+			toggle.checked = result.isActive;
+			toggle.setAttribute("aria-label", `${result.isActive ? "Deactivate" : "Activate"} ${toggle.dataset.name}`);
+			if (isDishStatus) {
+				const editButton = toggle.closest("[data-dish-row]").querySelector("[data-dish-edit]");
+				if (editButton) editButton.dataset.isActive = String(result.isActive);
+			}
+			if (result.warning) notify(result.warning);
+		} catch (error) {
+			toggle.checked = previousStatus;
+			notify(error instanceof TypeError
+				? "Could not reach the server while updating status. Check your connection and try again."
+				: error.message || `${isDishStatus ? "Dish" : "Category"} status could not be updated.`);
+		} finally {
+			toggle.disabled = false;
+			toggle.removeAttribute("aria-busy");
 		}
 	});
 	document.addEventListener("click", async event => {
@@ -484,7 +537,11 @@
 				: ""}${tableBody.dataset.canDelete === "true"
 				? `<button class="item-delete-button" type="button" data-category-delete data-id="${result.id}" data-name="${escapeHtml(result.name)}">Delete</button>`
 				: ""}`;
+			const status = tableBody.dataset.canUpdate === "true"
+				? `<label class="availability-toggle"><input type="checkbox" data-category-status data-id="${result.id}" data-name="${escapeHtml(result.name)}" aria-label="${result.isActive ? "Deactivate" : "Activate"} ${escapeHtml(result.name)}" ${result.isActive ? "checked" : ""} /><span aria-hidden="true"></span></label>`
+				: `<label class="availability-toggle"><input type="checkbox" disabled aria-label="${result.isActive ? "Active" : "Inactive"}: ${escapeHtml(result.name)}" ${result.isActive ? "checked" : ""} /><span aria-hidden="true"></span></label>`;
 			const rowHtml = `<tr data-category-row="${result.id}" data-parent-id="${result.parentId ?? ""}">
+				${actions ? `<td class="category-actions">${actions}</td>` : ""}
 				<td>${result.imageUrl
 					? `<img class="category-image" src="${escapeHtml(result.imageUrl)}" alt="${escapeHtml(result.name)}" loading="lazy" />`
 					: '<span class="category-image-placeholder" aria-hidden="true">◈</span>'}</td>
@@ -492,8 +549,7 @@
 					? `<small class="category-parent-label">Subcategory of ${escapeHtml(categoryParentId.selectedOptions[0]?.textContent || "")}</small>`
 					: ""}</td>
 				<td>${escapeHtml(result.details)}</td>
-				<td><span class="status-pill status-ready">${result.isActive ? "Active" : "Inactive"}</span></td>
-				${actions ? `<td class="category-actions">${actions}</td>` : ""}
+				<td>${status}</td>
 			</tr>`;
 			const existingRow = tableBody.querySelector(`[data-category-row="${result.id}"]`);
 			if (existingRow) {
