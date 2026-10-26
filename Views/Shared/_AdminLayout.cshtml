@@ -1,0 +1,110 @@
+@{
+    var menus = ViewData["Menus"] as IReadOnlyList<AnjaniKitchen.Models.ItemMenu> ?? [];
+    var adminName = ViewData["AdminName"] as string ?? "Admin";
+    var roleName = ViewData["RoleName"] as string ?? string.Empty;
+    var controllerName = ViewContext.RouteData.Values["controller"]?.ToString();
+    var actionName = ViewContext.RouteData.Values["action"]?.ToString();
+    var rootMenus = menus.Where(menu => menu.ParentId is null).ToList();
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Anjani's Kitchen</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    @await RenderSectionAsync("Styles", required: false)
+</head>
+<body class="admin-body">
+    <div class="app-shell" id="appShell">
+        <header class="topbar">
+            <a class="topbar-brand" href="@Url.Action("Index", "Home")" aria-label="Anjani Kitchen dashboard">
+                <span class="brand-mark">AK</span>
+                <span class="brand-copy"><strong>Anjani's</strong><small>KITCHEN ADMIN</small></span>
+            </a>
+            <button class="icon-button sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle navigation" aria-expanded="true" title="Toggle navigation">
+                <span class="hamburger"><i></i><i></i><i></i></span>
+            </button>
+            <label class="global-search" for="globalSearch">
+                <span class="search-glyph" aria-hidden="true">⌕</span>
+                <input id="globalSearch" type="search" placeholder="Search menus, orders, customers" autocomplete="off" />
+                <kbd>⌘ K</kbd>
+            </label>
+            <div class="topbar-actions">
+                <div class="popover-wrap profile-wrap">
+                    <button class="profile-button" type="button" data-popover-toggle="profilePanel" aria-expanded="false" aria-label="Open account menu for @adminName">
+                        <span class="avatar">@(string.IsNullOrEmpty(adminName) ? "?" : adminName[..1].ToUpperInvariant())</span>
+                        <span class="profile-copy"><strong>@adminName</strong><small>@roleName</small></span>
+                        <span class="profile-chevron" aria-hidden="true"></span>
+                    </button>
+                    <div class="popover profile-popover" id="profilePanel" hidden>
+                        <div class="profile-menu-heading">
+                            <span class="avatar">@(string.IsNullOrEmpty(adminName) ? "?" : adminName[..1].ToUpperInvariant())</span>
+                            <span><strong>@adminName</strong><small>@roleName account</small></span>
+                        </div>
+                        <form method="post" action="@Url.Action("Logout", "Home")">
+                            @Html.AntiForgeryToken()
+                            <button class="signout-button" type="submit"><span class="signout-icon" aria-hidden="true">↪</span>Sign out</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="mobile-scrim" id="mobileScrim"></div>
+        <aside class="sidebar" id="sidebar">
+            <nav class="side-nav" aria-label="Main navigation">
+                <div class="nav-section-label">WORKSPACE</div>
+                @foreach (var menu in rootMenus)
+                {
+                    var children = menus.Where(item => item.ParentId == menu.Id).ToList();
+                    var isActiveRoot = string.Equals(menu.ControllerName, controllerName, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(menu.ActionName, actionName, StringComparison.OrdinalIgnoreCase);
+                    var activeChild = children.Any(child =>
+                        string.Equals(child.ControllerName, controllerName, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(child.ActionName, actionName, StringComparison.OrdinalIgnoreCase));
+                    var activeGroup = isActiveRoot || activeChild;
+                    var icon = menu.Name.Equals("Dashboard", StringComparison.OrdinalIgnoreCase) ? "◫"
+                        : menu.Name.Equals("Sales", StringComparison.OrdinalIgnoreCase) ? "▤"
+                        : menu.Name.Equals("Catalog", StringComparison.OrdinalIgnoreCase) ? "◈"
+                        : menu.Name.Equals("Customers", StringComparison.OrdinalIgnoreCase) ? "♙" : "•";
+                    if (children.Count > 0)
+                    {
+                        var submenuId = $"menu-submenu-{menu.Id}";
+                        <button class="nav-item nav-group @(activeGroup ? "is-active" : "submenu-closed")" type="button" data-menu-group-toggle="@submenuId" aria-expanded="@activeGroup.ToString().ToLowerInvariant()" aria-controls="@submenuId">
+                            <span class="nav-icon">@icon</span><span class="nav-text">@menu.Name</span><span class="nav-arrow" aria-hidden="true"></span>
+                        </button>
+                        <div class="nav-submenu @(activeGroup ? "" : "is-collapsed")" id="@submenuId">
+                            @foreach (var child in children)
+                            {
+                                var active = string.Equals(child.ControllerName, controllerName, StringComparison.OrdinalIgnoreCase)
+                                    && string.Equals(child.ActionName, actionName, StringComparison.OrdinalIgnoreCase);
+                                <a class="nav-subitem @(active ? "is-active" : "")" href="@Url.Action(child.ActionName, child.ControllerName)"><span class="nav-subitem-dot"></span>@child.Name</a>
+                            }
+                        </div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(menu.ControllerName) && !string.IsNullOrWhiteSpace(menu.ActionName))
+                    {
+                        <a class="nav-item nav-link @(isActiveRoot ? "is-active" : "")" href="@Url.Action(menu.ActionName, menu.ControllerName)">
+                            <span class="nav-icon">@icon</span><span class="nav-text">@menu.Name</span>
+                        </a>
+                    }
+                }
+            </nav>
+        </aside>
+
+        <main class="main-area admin-main-area" id="mainArea" data-initial-page="admin">
+            <section class="page-view admin-page-view" data-page="admin">
+                @RenderBody()
+            </section>
+            <footer class="main-footer"><span>© 2026 Anjani's Kitchen</span><span><i class="open-indicator"></i> All systems operational</span></footer>
+        </main>
+    </div>
+    <div class="toast-message" id="toastMessage" role="status" aria-live="polite"></div>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

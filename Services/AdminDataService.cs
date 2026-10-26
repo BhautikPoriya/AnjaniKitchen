@@ -1,3 +1,4 @@
+using System.Data;
 using AnjaniKitchen.Models;
 using Microsoft.Data.SqlClient;
 
@@ -13,11 +14,264 @@ public sealed class AdminDataService : IAdminDataService
             ?? throw new InvalidOperationException("The DefaultConnection connection string is not configured.");
     }
 
+    public async Task<IReadOnlyList<AdminUser>> GetAdminUsersAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT userAccount.Id, userAccount.FirstName, userAccount.LastName, userAccount.Email,
+                   userAccount.UserName, userAccount.Phone, userAccount.DOB, userAccount.City,
+                   userAccount.State, userAccount.Country, userAccount.IsSystemUser,
+                   userAccount.IsActive, userAccount.RoleId, userRole.RoleName
+            FROM dbo.AdminUsers AS userAccount
+            INNER JOIN dbo.[Role] AS userRole ON userRole.Id = userAccount.RoleId
+            ORDER BY userAccount.LastName, userAccount.FirstName, userAccount.Id;
+            """;
+        var users = new List<AdminUser>();
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var firstName = reader.GetString(1);
+            var lastName = reader.GetString(2);
+            users.Add(new AdminUser
+            {
+                Id = reader.GetInt32(0),
+                FirstName = firstName,
+                LastName = lastName,
+                Name = $"{firstName} {lastName}".Trim(),
+                Email = reader.GetString(3),
+                UserName = reader.GetString(4),
+                Phone = reader.IsDBNull(5) ? null : reader.GetString(5),
+                DOB = reader.IsDBNull(6) ? null : reader.GetDateTime(6),
+                City = reader.IsDBNull(7) ? null : reader.GetString(7),
+                State = reader.IsDBNull(8) ? null : reader.GetString(8),
+                Country = reader.IsDBNull(9) ? null : reader.GetString(9),
+                IsSystemUser = reader.GetBoolean(10),
+                IsActive = reader.GetBoolean(11),
+                RoleId = reader.GetInt32(12),
+                RoleName = reader.GetString(13)
+            });
+        }
+        return users;
+    }
+
+    public async Task<int> SaveAdminUserAsync(
+        AdminUserInput user,
+        string? passwordHash,
+        CancellationToken cancellationToken = default)
+    {
+        const string insertSql = """
+            INSERT INTO dbo.AdminUsers
+                (Name, FirstName, LastName, Email, UserName, [Password], Phone, DOB, City, State, Country,
+                 IsSystemUser, IsActive, RoleId)
+            OUTPUT INSERTED.Id
+            VALUES
+                (@Name, @FirstName, @LastName, @Email, @UserName, @Password, @Phone, @DOB, @City, @State, @Country,
+                 @IsSystemUser, @IsActive, @RoleId);
+            """;
+        const string updateSql = """
+            UPDATE dbo.AdminUsers
+            SET Name = @Name, FirstName = @FirstName, LastName = @LastName, Email = @Email,
+                UserName = @UserName, Phone = @Phone, DOB = @DOB, City = @City, State = @State, Country = @Country,
+                IsSystemUser = @IsSystemUser, IsActive = @IsActive, RoleId = @RoleId
+            WHERE Id = @Id;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(user.Id == 0 ? insertSql : updateSql, connection);
+        AddAdminUserParameters(command, user);
+        if (user.Id == 0)
+        {
+            if (passwordHash is null)
+                throw new ArgumentException("A password hash is required when creating a user.", nameof(passwordHash));
+
+            command.Parameters.Add("@Password", SqlDbType.NVarChar, 200).Value = passwordHash;
+            return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+        }
+
+        command.Parameters.Add("@Id", SqlDbType.Int).Value = user.Id;
+        if (passwordHash is not null)
+        {
+            command.CommandText = """
+                UPDATE dbo.AdminUsers
+                SET Name = @Name, FirstName = @FirstName, LastName = @LastName, Email = @Email,
+                    UserName = @UserName, [Password] = @Password, Phone = @Phone, DOB = @DOB,
+                    City = @City, State = @State, Country = @Country,
+                    IsSystemUser = @IsSystemUser, IsActive = @IsActive, RoleId = @RoleId
+                WHERE Id = @Id;
+                """;
+            command.Parameters.Add("@Password", SqlDbType.NVarChar, 200).Value = passwordHash;
+        }
+
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1 ? user.Id : 0;
+    }
+
+    public async Task<bool> DeleteAdminUserAsync(int id, CancellationToken cancellationToken = default)
+    {
+        const string sql = "DELETE FROM dbo.AdminUsers WHERE Id = @Id;";
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add("@Id", SqlDbType.Int).Value = id;
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    public async Task<IReadOnlyList<AdminRole>> GetRolesAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = "SELECT Id, RoleName, IsActive FROM dbo.[Role] ORDER BY RoleName, Id;";
+        var roles = new List<AdminRole>();
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            roles.Add(new AdminRole
+            {
+                Id = reader.GetInt32(0),
+                RoleName = reader.GetString(1),
+                IsActive = reader.GetBoolean(2)
+            });
+        }
+        return roles;
+    }
+
+    public async Task<int> SaveRoleAsync(int id, string roleName, bool isActive, CancellationToken cancellationToken = default)
+    {
+        var sql = id == 0
+            ? "INSERT INTO dbo.[Role] (RoleName, IsActive) OUTPUT INSERTED.Id VALUES (@RoleName, @IsActive);"
+            : "UPDATE dbo.[Role] SET RoleName = @RoleName, IsActive = @IsActive WHERE Id = @Id;";
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add("@RoleName", SqlDbType.NVarChar, 200).Value = roleName;
+        command.Parameters.Add("@IsActive", SqlDbType.Bit).Value = isActive;
+        if (id == 0)
+            return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+
+        command.Parameters.Add("@Id", SqlDbType.Int).Value = id;
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1 ? id : 0;
+    }
+
+    public async Task<bool> DeleteRoleAsync(int id, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            IF EXISTS (SELECT 1 FROM dbo.AdminUsers WHERE RoleId = @Id)
+                SELECT 0;
+            ELSE
+            BEGIN
+                DELETE FROM dbo.RolePrivilege WHERE RoleId = @Id;
+                DELETE FROM dbo.[Role] WHERE Id = @Id;
+                SELECT @@ROWCOUNT;
+            END;
+            """;
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add("@Id", SqlDbType.Int).Value = id;
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) == 1;
+    }
+
+    public async Task<IReadOnlyList<ItemMenu>> GetAllMenusAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT Id, Name, ParentId, ControllerName, ActionName
+            FROM dbo.ItemMenus
+            WHERE IsActive = 1
+            ORDER BY CASE WHEN ParentId IS NULL THEN Id ELSE ParentId END, Id;
+            """;
+        var menus = new List<ItemMenu>();
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            menus.Add(new ItemMenu
+            {
+                Id = reader.GetInt32(0),
+                Name = reader.GetString(1),
+                ParentId = reader.IsDBNull(2) ? null : reader.GetInt32(2),
+                ControllerName = reader.IsDBNull(3) ? null : reader.GetString(3),
+                ActionName = reader.IsDBNull(4) ? null : reader.GetString(4)
+            });
+        }
+        return menus;
+    }
+
+    public async Task<IReadOnlyList<RolePrivilegeInput>> GetRolePrivilegesAsync(int roleId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT menu.Id, CAST(COALESCE(privilege.[View], 0) AS bit),
+                   CAST(COALESCE(privilege.[Add], 0) AS bit), CAST(COALESCE(privilege.[Edit], 0) AS bit),
+                   CAST(COALESCE(privilege.[Update], 0) AS bit), CAST(COALESCE(privilege.[Delete], 0) AS bit)
+            FROM dbo.ItemMenus AS menu
+            LEFT JOIN dbo.RolePrivilege AS privilege ON privilege.MenuId = menu.Id AND privilege.RoleId = @RoleId
+            WHERE menu.IsActive = 1
+            ORDER BY CASE WHEN menu.ParentId IS NULL THEN menu.Id ELSE menu.ParentId END, menu.Id;
+            """;
+        var privileges = new List<RolePrivilegeInput>();
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.Add("@RoleId", SqlDbType.Int).Value = roleId;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            privileges.Add(new RolePrivilegeInput
+            {
+                MenuId = reader.GetInt32(0),
+                View = reader.GetBoolean(1),
+                Add = reader.GetBoolean(2),
+                Edit = reader.GetBoolean(3),
+                Update = reader.GetBoolean(4),
+                Delete = reader.GetBoolean(5)
+            });
+        }
+        return privileges;
+    }
+
+    public async Task SaveRolePrivilegesAsync(
+        int roleId,
+        IReadOnlyList<RolePrivilegeInput> privileges,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        await using (var deleteCommand = new SqlCommand("DELETE FROM dbo.RolePrivilege WHERE RoleId = @RoleId;", connection, transaction))
+        {
+            deleteCommand.Parameters.Add("@RoleId", SqlDbType.Int).Value = roleId;
+            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        const string insertSql = """
+            INSERT INTO dbo.RolePrivilege (MenuId, RoleId, [View], [Add], [Edit], [Insert], [Update], [Delete])
+            SELECT @MenuId, @RoleId, @View, @Add, @Edit, @Add, @Update, @Delete
+            WHERE EXISTS (SELECT 1 FROM dbo.ItemMenus WHERE Id = @MenuId AND IsActive = 1);
+            """;
+        foreach (var privilege in privileges)
+        {
+            await using var insertCommand = new SqlCommand(insertSql, connection, transaction);
+            insertCommand.Parameters.Add("@MenuId", SqlDbType.Int).Value = privilege.MenuId;
+            insertCommand.Parameters.Add("@RoleId", SqlDbType.Int).Value = roleId;
+            insertCommand.Parameters.Add("@View", SqlDbType.Bit).Value = privilege.View;
+            insertCommand.Parameters.Add("@Add", SqlDbType.Bit).Value = privilege.Add;
+            insertCommand.Parameters.Add("@Edit", SqlDbType.Bit).Value = privilege.Edit;
+            insertCommand.Parameters.Add("@Update", SqlDbType.Bit).Value = privilege.Update;
+            insertCommand.Parameters.Add("@Delete", SqlDbType.Bit).Value = privilege.Delete;
+            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task<AdminUser?> GetActiveUserByUserNameAsync(string userName, CancellationToken cancellationToken = default)
     {
         const string sql = """
-            SELECT userAccount.Id, userAccount.Name, userAccount.UserName, userAccount.[Password],
-                   userAccount.IsActive, userAccount.RoleId, userRole.RoleName
+            SELECT userAccount.Id, userAccount.FirstName, userAccount.LastName, userAccount.UserName,
+                   userAccount.[Password], userAccount.IsActive, userAccount.RoleId, userRole.RoleName
             FROM dbo.AdminUsers AS userAccount
             INNER JOIN dbo.[Role] AS userRole ON userRole.Id = userAccount.RoleId
             WHERE userAccount.UserName = @UserName
@@ -39,12 +293,14 @@ public sealed class AdminDataService : IAdminDataService
         return new AdminUser
         {
             Id = reader.GetInt32(0),
-            Name = reader.GetString(1),
-            UserName = reader.GetString(2),
-            Password = reader.GetString(3),
-            IsActive = reader.GetBoolean(4),
-            RoleId = reader.GetInt32(5),
-            RoleName = reader.GetString(6)
+            Name = $"{reader.GetString(1)} {reader.GetString(2)}".Trim(),
+            FirstName = reader.GetString(1),
+            LastName = reader.GetString(2),
+            UserName = reader.GetString(3),
+            Password = reader.GetString(4),
+            IsActive = reader.GetBoolean(5),
+            RoleId = reader.GetInt32(6),
+            RoleName = reader.GetString(7)
         };
     }
 
@@ -53,6 +309,8 @@ public sealed class AdminDataService : IAdminDataService
         const string sql = """
             SELECT menu.Id, menu.Name, menu.ParentId, menu.ControllerName, menu.ActionName,
                    CAST(COALESCE(privilege.[View], 0) AS bit),
+                   CAST(COALESCE(privilege.[Add], 0) AS bit),
+                   CAST(COALESCE(privilege.[Edit], 0) AS bit),
                    CAST(COALESCE(privilege.[Insert], 0) AS bit),
                    CAST(COALESCE(privilege.[Update], 0) AS bit),
                    CAST(COALESCE(privilege.[Delete], 0) AS bit)
@@ -63,7 +321,6 @@ public sealed class AdminDataService : IAdminDataService
             LEFT JOIN dbo.RolePrivilege AS privilege
                 ON privilege.MenuId = menu.Id
                 AND privilege.RoleId = userAccount.RoleId
-                AND privilege.UserId = userAccount.Id
             WHERE menu.IsActive = 1
               AND
               (
@@ -79,7 +336,6 @@ public sealed class AdminDataService : IAdminDataService
                       WHERE childMenu.ParentId = menu.Id
                         AND childMenu.IsActive = 1
                         AND childPrivilege.RoleId = userAccount.RoleId
-                        AND childPrivilege.UserId = userAccount.Id
                         AND childPrivilege.[View] = 1
                       )
                   )
@@ -105,9 +361,11 @@ public sealed class AdminDataService : IAdminDataService
                 ControllerName = reader.IsDBNull(3) ? null : reader.GetString(3),
                 ActionName = reader.IsDBNull(4) ? null : reader.GetString(4),
                 CanView = reader.GetBoolean(5),
-                CanInsert = reader.GetBoolean(6),
-                CanUpdate = reader.GetBoolean(7),
-                CanDelete = reader.GetBoolean(8)
+                CanAdd = reader.GetBoolean(6),
+                CanEdit = reader.GetBoolean(7),
+                CanInsert = reader.GetBoolean(8),
+                CanUpdate = reader.GetBoolean(9),
+                CanDelete = reader.GetBoolean(10)
             });
         }
 
@@ -545,6 +803,8 @@ public sealed class AdminDataService : IAdminDataService
         var permissionColumn = permission switch
         {
             MenuPermission.View => "[View]",
+            MenuPermission.Add => "[Add]",
+            MenuPermission.Edit => "[Edit]",
             MenuPermission.Insert => "[Insert]",
             MenuPermission.Update => "[Update]",
             MenuPermission.Delete => "[Delete]",
@@ -558,8 +818,7 @@ public sealed class AdminDataService : IAdminDataService
                 FROM dbo.AdminUsers AS userAccount
                 INNER JOIN dbo.[Role] AS userRole ON userRole.Id = userAccount.RoleId
                 INNER JOIN dbo.RolePrivilege AS privilege
-                    ON privilege.UserId = userAccount.Id
-                    AND privilege.RoleId = userAccount.RoleId
+                    ON privilege.RoleId = userAccount.RoleId
                 INNER JOIN dbo.ItemMenus AS menu ON menu.Id = privilege.MenuId
                 WHERE userAccount.Id = @UserId
                   AND userAccount.RoleId = @RoleId
@@ -581,5 +840,22 @@ public sealed class AdminDataService : IAdminDataService
         command.Parameters.AddWithValue("@ActionName", actionName);
 
         return (int)(await command.ExecuteScalarAsync(cancellationToken) ?? 0) == 1;
+    }
+
+    private static void AddAdminUserParameters(SqlCommand command, AdminUserInput user)
+    {
+        command.Parameters.Add("@Name", SqlDbType.NVarChar, 200).Value = $"{user.FirstName.Trim()} {user.LastName.Trim()}".Trim();
+        command.Parameters.Add("@FirstName", SqlDbType.NVarChar, 100).Value = user.FirstName.Trim();
+        command.Parameters.Add("@LastName", SqlDbType.NVarChar, 100).Value = user.LastName.Trim();
+        command.Parameters.Add("@Email", SqlDbType.NVarChar, 320).Value = user.Email.Trim();
+        command.Parameters.Add("@UserName", SqlDbType.NVarChar, 200).Value = user.UserName.Trim();
+        command.Parameters.Add("@Phone", SqlDbType.NVarChar, 30).Value = (object?)user.Phone?.Trim() ?? DBNull.Value;
+        command.Parameters.Add("@DOB", SqlDbType.Date).Value = (object?)user.DOB?.Date ?? DBNull.Value;
+        command.Parameters.Add("@City", SqlDbType.NVarChar, 100).Value = (object?)user.City?.Trim() ?? DBNull.Value;
+        command.Parameters.Add("@State", SqlDbType.NVarChar, 100).Value = (object?)user.State?.Trim() ?? DBNull.Value;
+        command.Parameters.Add("@Country", SqlDbType.NVarChar, 100).Value = (object?)user.Country?.Trim() ?? DBNull.Value;
+        command.Parameters.Add("@IsSystemUser", SqlDbType.Bit).Value = user.IsSystemUser;
+        command.Parameters.Add("@IsActive", SqlDbType.Bit).Value = user.IsActive;
+        command.Parameters.Add("@RoleId", SqlDbType.Int).Value = user.RoleId;
     }
 }

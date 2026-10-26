@@ -1,0 +1,65 @@
+@model AnjaniKitchen.Models.RolePrivilegesViewModel
+@{
+    Layout = "_AdminLayout";
+    ViewData["Title"] = "Role Privileges";
+    var parentNames = Model.Menus.Where(menu => menu.ParentId is null).ToDictionary(menu => menu.Id, menu => menu.Name);
+}
+<div class="page-heading"><div><span class="eyebrow">CUSTOMERS</span><h1>Role Privileges</h1><p>Select a role and configure its permissions for each menu.</p></div></div>
+<form asp-action="RolePrivileges" method="get" class="admin-role-picker">
+    <div><label for="roleId" class="admin-form-label">Role</label>
+        <select id="roleId" name="roleId" class="admin-input" onchange="this.form.submit()">
+            <option value="">Choose a role</option>
+            @foreach (var role in Model.Roles)
+            {
+                <option value="@role.Id" selected="@(Model.SelectedRoleId == role.Id)">@role.RoleName</option>
+            }
+        </select>
+    </div>
+    <noscript><button class="item-delete-button" type="submit">Load</button></noscript>
+</form>
+@if (Model.SelectedRoleId is not null)
+{
+    <form asp-action="SaveRolePrivileges" method="post">
+        <input type="hidden" name="roleId" value="@Model.SelectedRoleId" />
+        <section class="panel page-panel admin-table-panel">
+            <div class="table-scroll">
+            <table class="data-table full-table admin-table admin-privilege-table">
+                <thead><tr><th>Menu</th><th class="text-center">View</th><th class="text-center">Add</th><th class="text-center">Edit</th><th class="text-center">Update</th><th class="text-center">Delete</th></tr></thead>
+                <tbody>
+                @for (var i = 0; i < Model.Menus.Count; i++)
+                {
+                    var menu = Model.Menus[i];
+                    var privilege = Model.Privileges.GetValueOrDefault(menu.Id) ?? new AnjaniKitchen.Models.RolePrivilegeInput();
+                    <tr>
+                        <td>
+                            <input type="hidden" name="privileges[@i].MenuId" value="@menu.Id" />
+                            @if (menu.ParentId is int parentId && parentNames.TryGetValue(parentId, out var parentName))
+                            {
+                                <span class="admin-parent-menu">↳ @parentName / </span>@menu.Name
+                            }
+                            else
+                            {
+                                @menu.Name
+                            }
+                        </td>
+                        <td class="admin-checkbox-cell"><input name="privileges[@i].View" type="checkbox" value="true" checked="@privilege.View" disabled="@(!Model.CanUpdate)" /><input type="hidden" name="privileges[@i].View" value="false" /></td>
+                        <td class="admin-checkbox-cell"><input name="privileges[@i].Add" type="checkbox" value="true" checked="@privilege.Add" disabled="@(!Model.CanUpdate)" /><input type="hidden" name="privileges[@i].Add" value="false" /></td>
+                        <td class="admin-checkbox-cell"><input name="privileges[@i].Edit" type="checkbox" value="true" checked="@privilege.Edit" disabled="@(!Model.CanUpdate)" /><input type="hidden" name="privileges[@i].Edit" value="false" /></td>
+                        <td class="admin-checkbox-cell"><input name="privileges[@i].Update" type="checkbox" value="true" checked="@privilege.Update" disabled="@(!Model.CanUpdate)" /><input type="hidden" name="privileges[@i].Update" value="false" /></td>
+                        <td class="admin-checkbox-cell"><input name="privileges[@i].Delete" type="checkbox" value="true" checked="@privilege.Delete" disabled="@(!Model.CanUpdate)" /><input type="hidden" name="privileges[@i].Delete" value="false" /></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+            </div>
+        </section>
+        @if (Model.CanUpdate)
+        {
+            <button class="primary-button admin-save-button" type="submit">Save permissions</button>
+        }
+    </form>
+}
+else
+{
+    <div class="admin-info">Choose a role to view its menu permissions.</div>
+}

@@ -1,0 +1,50 @@
+@model AnjaniKitchen.Models.AdminRolesViewModel
+@{
+    Layout = "_AdminLayout";
+    ViewData["Title"] = "Roles";
+}
+<div class="page-heading">
+    <div><span class="eyebrow">CUSTOMERS</span><h1>Roles</h1><p>Create and manage access roles.</p></div>
+    @if (Model.Permissions.CanAdd)
+    {
+        <a class="primary-button" asp-action="RoleForm"><span>＋</span> Add role</a>
+    }
+</div>
+@if (TempData["CustomerAdminError"] is string error)
+{
+    <div class="admin-alert" role="alert">@error</div>
+}
+<section class="panel page-panel admin-table-panel">
+    <div class="table-scroll">
+        <table class="data-table full-table admin-table admin-role-table">
+            <thead><tr><th>Role name</th><th>Status</th>@if (Model.Permissions.CanEdit || Model.Permissions.CanDelete) { <th>Actions</th> }</tr></thead>
+            <tbody>
+            @if (Model.Roles.Count == 0)
+            {
+                <tr><td colspan="@(Model.Permissions.CanEdit || Model.Permissions.CanDelete ? 3 : 2)" class="admin-empty">No roles have been created.</td></tr>
+            }
+            @foreach (var role in Model.Roles)
+            {
+                <tr>
+                    <td>@role.RoleName</td><td>@(role.IsActive ? "Active" : "Inactive")</td>
+                    @if (Model.Permissions.CanEdit || Model.Permissions.CanDelete)
+                    {
+                    <td class="admin-row-actions">
+                    @if (Model.Permissions.CanEdit)
+                    {
+                        <a class="item-delete-button" asp-action="RoleForm" asp-route-id="@role.Id">Edit</a>
+                    }
+                    @if (Model.Permissions.CanDelete)
+                    {
+                        <form class="d-inline" asp-action="DeleteRole" asp-route-id="@role.Id" method="post" onsubmit="return confirm('Delete this role?');">
+                            <button class="item-delete-button admin-danger-button" type="submit">Delete</button>
+                        </form>
+                    }
+                    </td>
+                    }
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>

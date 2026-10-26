@@ -8,6 +8,8 @@ public sealed class ItemMenu
     public string? ControllerName { get; init; }
     public string? ActionName { get; init; }
     public bool CanView { get; init; }
+    public bool CanAdd { get; init; }
+    public bool CanEdit { get; init; }
     public bool CanInsert { get; init; }
     public bool CanUpdate { get; init; }
     public bool CanDelete { get; init; }

@@ -1,0 +1,51 @@
+@model AnjaniKitchen.Models.AdminUsersViewModel
+@{
+    Layout = "_AdminLayout";
+    ViewData["Title"] = "Users";
+}
+<div class="page-heading">
+    <div><span class="eyebrow">CUSTOMERS</span><h1>Users</h1><p>Manage administrator and system user accounts.</p></div>
+    @if (Model.Permissions.CanAdd)
+    {
+        <a class="primary-button" asp-action="UserForm"><span>＋</span> Add user</a>
+    }
+</div>
+@if (TempData["CustomerAdminError"] is string error)
+{
+    <div class="admin-alert" role="alert">@error</div>
+}
+<section class="panel page-panel admin-table-panel">
+    <div class="table-scroll">
+        <table class="data-table full-table admin-table">
+            <thead><tr><th>Name</th><th>Email</th><th>Username</th><th>Phone</th><th>Role</th><th>System user</th><th>Status</th>@if (Model.Permissions.CanEdit || Model.Permissions.CanDelete) { <th>Actions</th> }</tr></thead>
+            <tbody>
+            @if (Model.Users.Count == 0)
+            {
+                <tr><td colspan="@(Model.Permissions.CanEdit || Model.Permissions.CanDelete ? 8 : 7)" class="admin-empty">No users have been added.</td></tr>
+            }
+            @foreach (var user in Model.Users)
+            {
+                <tr>
+                    <td>@user.Name</td><td>@user.Email</td><td>@user.UserName</td><td>@(user.Phone ?? "—")</td>
+                    <td>@user.RoleName</td><td>@(user.IsSystemUser ? "Yes" : "No")</td><td>@(user.IsActive ? "Active" : "Inactive")</td>
+                    @if (Model.Permissions.CanEdit || Model.Permissions.CanDelete)
+                    {
+                    <td class="admin-row-actions">
+                    @if (Model.Permissions.CanEdit)
+                    {
+                        <a class="item-delete-button" asp-action="UserForm" asp-route-id="@user.Id">Edit</a>
+                    }
+                    @if (Model.Permissions.CanDelete)
+                    {
+                        <form class="d-inline" asp-action="DeleteUser" asp-route-id="@user.Id" method="post" onsubmit="return confirm('Delete this user?');">
+                            <button class="item-delete-button admin-danger-button" type="submit">Delete</button>
+                        </form>
+                    }
+                    </td>
+                    }
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>

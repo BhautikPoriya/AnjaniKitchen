@@ -1,0 +1,46 @@
+@model AnjaniKitchen.Models.AdminUserFormViewModel
+@{
+    Layout = "_AdminLayout";
+    ViewData["Title"] = Model.IsEdit ? "Edit user" : "Add user";
+}
+<div class="page-heading">
+    <div><span class="eyebrow">CUSTOMERS · USERS</span><h1>@(Model.IsEdit ? "Edit user" : "Add user")</h1><p>Enter the account details below.</p></div>
+    <a class="item-delete-button" asp-action="Users">← Users</a>
+</div>
+<form asp-action="SaveUser" method="post" class="panel page-panel admin-form-panel">
+    <div asp-validation-summary="ModelOnly" class="admin-validation-summary"></div>
+    <input asp-for="User.Id" type="hidden" />
+    <div class="admin-form-grid">
+        <fieldset class="admin-field">
+            <legend class="admin-form-label">Is system user</legend>
+            <div class="admin-radio-group">
+            <label><input asp-for="User.IsSystemUser" type="radio" value="true" /> Yes</label>
+            <label><input asp-for="User.IsSystemUser" type="radio" value="false" /> No</label>
+            </div>
+        </fieldset>
+        <div class="admin-field"><label asp-for="User.RoleId" class="admin-form-label">Role</label>
+            <select asp-for="User.RoleId" class="admin-input">
+                <option value="">Choose a role</option>
+                @foreach (var role in Model.Roles.Where(role => role.IsActive))
+                {
+                    <option value="@role.Id">@role.RoleName</option>
+                }
+            </select><span asp-validation-for="User.RoleId" class="text-danger"></span>
+        </div>
+        <div class="admin-field"><label asp-for="User.FirstName" class="admin-form-label"></label><input asp-for="User.FirstName" class="admin-input" /><span asp-validation-for="User.FirstName" class="admin-field-error"></span></div>
+        <div class="admin-field"><label asp-for="User.LastName" class="admin-form-label"></label><input asp-for="User.LastName" class="admin-input" /><span asp-validation-for="User.LastName" class="admin-field-error"></span></div>
+        <div class="admin-field"><label asp-for="User.Email" class="admin-form-label"></label><input asp-for="User.Email" class="admin-input" /><span asp-validation-for="User.Email" class="admin-field-error"></span></div>
+        <div class="admin-field"><label asp-for="User.UserName" class="admin-form-label">Username</label><input asp-for="User.UserName" class="admin-input" /><span asp-validation-for="User.UserName" class="admin-field-error"></span></div>
+        <div class="admin-field"><label asp-for="User.Password" class="admin-form-label">@(Model.IsEdit ? "New password (optional)" : "Password")</label><input asp-for="User.Password" type="password" autocomplete="new-password" class="admin-input" /><span asp-validation-for="User.Password" class="admin-field-error"></span></div>
+        <div class="admin-field"><label asp-for="User.Phone" class="admin-form-label"></label><input asp-for="User.Phone" class="admin-input" /><span asp-validation-for="User.Phone" class="admin-field-error"></span></div>
+        <div class="admin-field"><label asp-for="User.DOB" class="admin-form-label">Date of birth</label><input asp-for="User.DOB" type="date" class="admin-input" /><span asp-validation-for="User.DOB" class="admin-field-error"></span></div>
+        <div class="admin-field"><label asp-for="User.City" class="admin-form-label"></label><input asp-for="User.City" class="admin-input" /></div>
+        <div class="admin-field"><label asp-for="User.State" class="admin-form-label"></label><input asp-for="User.State" class="admin-input" /></div>
+        <div class="admin-field"><label asp-for="User.Country" class="admin-form-label"></label><input asp-for="User.Country" class="admin-input" /></div>
+        <label class="admin-check-field"><input asp-for="User.IsActive" /> Active</label>
+    </div>
+    <div class="admin-form-actions"><button class="primary-button" type="submit">Save user</button><a class="item-delete-button" asp-action="Users">Cancel</a></div>
+</form>
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

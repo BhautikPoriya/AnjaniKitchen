@@ -1,0 +1,16 @@
+@model AnjaniKitchen.Models.AdminRole
+@{
+    Layout = "_AdminLayout";
+    ViewData["Title"] = Model.Id == 0 ? "Add role" : "Edit role";
+}
+<div class="page-heading">
+    <div><span class="eyebrow">CUSTOMERS · ROLES</span><h1>@(Model.Id == 0 ? "Add role" : "Edit role")</h1><p>Set the role name and status.</p></div>
+    <a class="item-delete-button" asp-action="Roles">← Roles</a>
+</div>
+<form asp-action="SaveRole" method="post" class="panel page-panel admin-form-panel admin-role-form">
+    <input type="hidden" name="id" value="@Model.Id" />
+    <div asp-validation-summary="ModelOnly" class="admin-validation-summary"></div>
+    <div class="admin-field"><label for="roleName" class="admin-form-label">Role name</label><input id="roleName" name="roleName" value="@Model.RoleName" maxlength="200" required class="admin-input" /></div>
+    <label class="admin-check-field"><input id="isActive" name="isActive" type="checkbox" value="true" checked="@Model.IsActive" /><input name="isActive" type="hidden" value="false" /> Active</label>
+    <div class="admin-form-actions"><button class="primary-button" type="submit">Save role</button><a asp-action="Roles" class="item-delete-button">Cancel</a></div>
+</form>

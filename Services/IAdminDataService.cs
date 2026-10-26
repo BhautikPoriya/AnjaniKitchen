@@ -5,6 +5,15 @@ namespace AnjaniKitchen.Services;
 public interface IAdminDataService
 {
     Task<AdminUser?> GetActiveUserByUserNameAsync(string userName, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AdminUser>> GetAdminUsersAsync(CancellationToken cancellationToken = default);
+    Task<int> SaveAdminUserAsync(AdminUserInput user, string? passwordHash, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAdminUserAsync(int id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AdminRole>> GetRolesAsync(CancellationToken cancellationToken = default);
+    Task<int> SaveRoleAsync(int id, string roleName, bool isActive, CancellationToken cancellationToken = default);
+    Task<bool> DeleteRoleAsync(int id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ItemMenu>> GetAllMenusAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RolePrivilegeInput>> GetRolePrivilegesAsync(int roleId, CancellationToken cancellationToken = default);
+    Task SaveRolePrivilegesAsync(int roleId, IReadOnlyList<RolePrivilegeInput> privileges, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ItemMenu>> GetMenusForUserAsync(int userId, int roleId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MenuCategory>> GetCategoriesAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Dish>> GetDishesAsync(CancellationToken cancellationToken = default);
